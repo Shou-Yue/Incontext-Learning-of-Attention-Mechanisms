@@ -1,0 +1,45 @@
+{
+  "experiment_name": "smoke_test",
+  "seed": 42,
+  "output_dir": "results/smoke/test",
+  "model": {
+    "attn_type": "baseline",
+    "task_dim": 20,
+    "max_context": 20,
+    "d_model": 128,
+    "n_layers": 2,
+    "n_heads": 4,
+    "d_mlp": 256,
+    "dropout": 0.0
+  },
+  "train": {
+    "batch_size": 32,
+    "total_steps": 500,
+    "learning_rate": 0.001,
+    "weight_decay": 0.01,
+    "warmup_steps": 50,
+    "grad_clip": 1.0,
+    "log_interval": 50,
+    "eval_interval": 100,
+    "checkpoint_interval": 100,
+    "resume": false,
+    "curriculum": {
+      "enabled": true,
+      "start_dim": 5,
+      "end_dim": 20,
+      "end_step": 200,
+      "start_context": 5,
+      "end_context": 20,
+      "context_end_step": 200
+    }
+  },
+  "eval": {
+    "num_prompts": 128,
+    "batch_size": 64,
+    "gd_eta": 1.0,
+    "knn_k": 3,
+    "ridge_lambda": 0.01,
+    "compute_baselines": true,
+    "compute_alignment": true
+  }
+}

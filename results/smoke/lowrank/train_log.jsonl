@@ -1,0 +1,3 @@
+{"kind": "train", "step": 0, "loss": 5.0968337059021, "lr": 4.0000000000000003e-07, "active_dim": 5, "n_context": 5, "loss_mode": "sequence"}
+{"kind": "train", "step": 100, "loss": 0.2093900889158249, "lr": 2.04e-05, "active_dim": 5, "n_context": 5, "loss_mode": "sequence"}
+{"kind": "eval", "step": 100, "n_context": 5, "active_dim": 5, "mse": 7.013083219528198, "nmse": 1.768203854560852, "least_squares_mse": 1.2780065686279762e-09, "min_norm_mse": 1.2780065686279762e-09, "ridge_mse": 0.09044044464826584, "knn_mse": 4.468642234802246, "averaging_mse": 9.039029359817505, "cosine_alignment": -0.02041382435709238}
