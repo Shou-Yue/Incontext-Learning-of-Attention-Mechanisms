@@ -19,7 +19,7 @@ MODEL_ATT_LAYERS = 12
 MODEL_ATT_HEADS = 8
 
 # sparse attention model hyperparameters
-SPARSE_WINDOW_SIZE = 64
+SPARSE_WINDOW_SIZE = 16
 SPARSE_STRIDE = 16
 SPARSE_GLOBAL_TOKENS = 0
 
@@ -199,6 +199,10 @@ def parse_args():
         choices = list(CONFIGS.keys()),
         default = "underparameterized",
     )
+    parser.add_argument(
+        "--sparse_attention",
+        action = "store_true"
+    )
     return parser.parse_args()
 
 
@@ -210,25 +214,26 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # model = TransformerModel(
-    #     n_dims = MODEL_DIMS,
-    #     n_positions = MODEL_POSITIONS,
-    #     n_embd = MODEL_EMBED_DIM,
-    #     n_layer = MODEL_ATT_LAYERS,
-    #     n_head = MODEL_ATT_HEADS,
-    # ).to(device)
-
-    model = SparseTransformerModel(
-        n_dims = MODEL_DIMS,
-        n_positions = MODEL_POSITIONS,
-        n_embd = MODEL_EMBED_DIM,
-        n_layer = MODEL_ATT_LAYERS,
-        n_head = MODEL_ATT_HEADS,
-        window_size = SPARSE_WINDOW_SIZE,
-        stride = SPARSE_STRIDE,
-        global_tokens = SPARSE_GLOBAL_TOKENS,
-        resid_pdrop = 0.0,
-        attn_pdrop = 0.0,
-    ).to(device)
+    if args.sparse_attention:
+        model = SparseTransformerModel(
+            n_dims = MODEL_DIMS,
+            n_positions = MODEL_POSITIONS,
+            n_embd = MODEL_EMBED_DIM,
+            n_layer = MODEL_ATT_LAYERS,
+            n_head = MODEL_ATT_HEADS,
+            window_size = SPARSE_WINDOW_SIZE,
+            stride = SPARSE_STRIDE,
+            global_tokens = SPARSE_GLOBAL_TOKENS,
+            resid_pdrop = 0.0,
+            attn_pdrop = 0.0,
+        ).to(device)
+    else:
+        model = TransformerModel(
+            n_dims = MODEL_DIMS,
+            n_positions = MODEL_POSITIONS,
+            n_embd = MODEL_EMBED_DIM,
+            n_layer = MODEL_ATT_LAYERS,
+            n_head = MODEL_ATT_HEADS,
+        ).to(device)
 
     train(model, cfg)
