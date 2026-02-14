@@ -1,0 +1,25 @@
+{
+  "n_dims": 20,
+  "max_n_points": 41,
+  "n_embd": 256,
+  "n_layer": 12,
+  "n_head": 8,
+  "batch_size": 64,
+  "learning_rate": 0.0001,
+  "num_steps": 500000,
+  "log_interval": 100,
+  "save_interval": 10000,
+  "checkpoint_dir": "checkpoints/linear_20d_full",
+  "use_curriculum": true,
+  "resume": true,
+  "curriculum": {
+    "dims_start": 5,
+    "dims_end": 20,
+    "dims_inc": 1,
+    "dims_interval": 2000,
+    "points_start": 11,
+    "points_end": 41,
+    "points_inc": 2,
+    "points_interval": 2000
+  }
+}
