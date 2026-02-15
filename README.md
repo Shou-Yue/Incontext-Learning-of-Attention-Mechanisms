@@ -1,6 +1,6 @@
-# Investigating In-Context Learning of Linear Regression in Transformers
+# What Enables In-Context Learning in Transformers? An Analysis of Attention Mechanisms
 
-This repository attempts to reproduce and extend the results from _What Can Transformers Learn In Context? A Case Study of Simple Functions?_ (Garg et al. 2023). Specifically, I aim to show that transformers are able to achieve comparable performance to specialized learners for a series of linear regression tasks. The specific tasks and specialized learners are:
+This repository attempts to reproduce and extend the results from _What Can Transformers Learn In Context? A Case Study of Simple Functions?_ (Garg et al. 2023) for a transformer model that uses sparse attention. Specifically, I first aim to show that transformers with the standard, dense attention mechanism are able to learn in-context and achieve comparable performance to specialized learners for a series of linear regression tasks. Additionally, I aim to test whether this performance is upheld when a more efficient attention mechanism, sparse attention is used instead. To make this comparison, a transformer using dense attention and a transformer using sparse attention will be trained on identical tasks to be compared. They will also be compared to specialized learners for each of these tasks. The specific tasks and specialized learners are:
 
 1. Underparameterized (standard) Linear Regression &rarr; Least Squares
 2. Overparameterized Linear Regression &rarr; Min-Norm Least Squares
@@ -40,7 +40,7 @@ The repository is structured as follows:
 │   ├── eval.ipynb          # Evaluation versus baselines, visualizations
 │   ├── losses.py           # Loss functions
 │   ├── model_utils.py      # Model loading and evaluation functions
-│   ├── model.py            # Transformer model architecture
+│   ├── model.py            # Transformer model architectures
 │   ├── train.py            # Training loop
 ```
 
@@ -79,7 +79,7 @@ conda activate in-context-learning
 
 ## Training
 
-To train, `cd` into the `src` folder. From here, you can train a model for one of three linear regression settings: underparameterized (standard), overparameterized, or sparse. `train.py` is the main entry point.
+To train, `cd` into the `src` folder. From here, you can train one of two models: dense or sparse attention for one of three linear regression settings: underparameterized (standard), overparameterized, or sparse. `train.py` is the main entry point.
 
 To start one of these training jobs, run the following:
 
@@ -89,9 +89,15 @@ python train.py --setting overparameterized
 python train.py --setting sparse
 ```
 
+Optionally, the sparse attention flag can be set to train a transformer that employs sparse attention rather than the traditional dense attention. 
+
+```
+python train.py --setting underparameterized --sparse_attention
+```
+
 ### Shared Training Setup
 
-All three settings share the same transformer architecture and most training hyperparameters. Additionally, they will all checkpoint to the corresponding folder under `models/`.
+All three settings share the same training hyperparameters. Additionally, they will all checkpoint to the corresponding folder under `models/`.
 
 Model Architecture
 - Input Dimension: `20`
@@ -111,7 +117,7 @@ The training script attempts to use a GPU if available, otherwise it falls back 
 
 ### Curriculum
 
-Each setting also has a different curriculum that is parameterized by the starting dimension, ending dimension, dimension increment, starting number of in-context points, ending number of in-context points, in-context points increment, and the interval at which to increment at. 
+Each setting also has a different curriculum that can be described by the starting dimension, ending dimension, dimension increment, starting number of in-context points, ending number of in-context points, in-context points increment, and the interval at which to increment at. 
 
 ### Underparameterized (Standard)
 
@@ -170,25 +176,11 @@ Once the transformers have been trained, run `eval.ipynb` to compare their perfo
 
 ### Setup
 
-Evaluation is done on fresh tasks that the model hasn't seen during training. For each setting, we load the trained model and evaluate it across different numbers of in-context examples (`n`), using inputs that are alwayus 20-dimensionsal. For each value of `n`, the model is asked to predict the query output . We then compare the model's prediction to the appropriate baseline (least squares, min-norm least squares, or LASSO) to see how well the model performs as the number in-context examples increases. 
+Evaluation is done on fresh tasks that the model hasn't seen during training. For each setting, we load the trained model and evaluate it across different numbers of in-context examples (`n`), using inputs that are alwayus 20-dimensionsal. For each value of `n`, the model is asked to predict the query output. We then compare the models' prediction to the appropriate baseline (least squares, min-norm least squares, or LASSO) to see how well the model performs as the number in-context examples increases. 
 
 ### Metrics
 
-The main evaluation metric is the mean squared error (MSE) on the query outputs, normalized by the number of nonzero entries in the ground truth weight vector. We apply this normalization in all settings to keep the scale of the error comparable, since the difficulty of the prediction depends on how many coordinates of the true weight vector actually matter. For each value of \( n \), we compute this normalized MSE and average it over many randomly sampled test tasks to obtain a stable estimate of the model’s performance.
-
-### Plots
-
-![](imgs/underparameterized_plot.png)
-
-This plot shows the in-context learning curve for the underparameterized setting. The x-axis is the number of in-context examples, and the y-axis is the normalized mean squared error on the query prediction. The transformer’s performance (blue) closely tracks the least squares baseline (orange). As `n` increases, both methods steadily decrease in error, eventually reaching near-zero once the model has seen enough examples to fully identify the underlying linear function. Overall, the transformer essentially matches the classical least squares solution across the entire range of context sizes.
-
-![](imgs/overparameterized_plot.png)
-
-This plot shows the in-context learning curve for the overparameterized setting, where the number of dimensions is larger than the number of examples. The transformer (blue) and the minimum-norm least squares baseline (orange) behave almost the same across all values of `n`. As the model sees more examples, both methods steadily reduce their prediction error at a similar rate, showing that the transformer is learning to solve the task about as well as the classical baseline.
-
-![](imgs/sparse_plot.png)
-
-This plot shows the in-context learning curve for the sparse setting, where the true weight vector has only a few nonzero entries. The transformer (blue) closely matches the performance of LASSO (red), which is the classical method designed for sparse regression. Both methods improve rapidly as they see more examples and reach near-zero error with roughly the same number of in-context points. Standard least squares (orange) performs noticeably worse in this regime because it does not account for sparsity.
+The main evaluation metric is the mean squared error (MSE) on the query outputs, normalized by the number of nonzero entries in the ground truth weight vector. We apply this normalization in all settings to keep the scale of the error comparable, since the difficulty of the prediction depends on how many coordinates of the true weight vector actually matter. For each value of `n`, we compute this normalized MSE and average it over many randomly sampled test tasks to obtain a stable estimate of the model’s performance.
 
 ### References
 

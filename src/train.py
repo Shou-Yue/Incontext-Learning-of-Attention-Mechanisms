@@ -32,8 +32,6 @@ KEEP_EVERY_STEPS = 100_000 # interval to snapshot
 
 @dataclass
 class TrainConfig:
-    out_dir: str
-
     sparsity: Optional[int]
 
     dims_start: int
@@ -48,8 +46,6 @@ class TrainConfig:
 
 CONFIGS = {
     "underparameterized": TrainConfig(
-        out_dir = "models/underparameterized_linear_regression",
-        
         sparsity = None,
 
         dims_start = 5,
@@ -64,8 +60,6 @@ CONFIGS = {
     ),
 
     "overparameterized": TrainConfig(
-        out_dir = "models/overparameterized_linear_regression",
-        
         sparsity = None,
 
         dims_start = 20,
@@ -80,8 +74,6 @@ CONFIGS = {
     ),
 
     "sparse": TrainConfig(
-        out_dir = "models/sparse_linear_regression",
-        
         sparsity = 3, 
 
         dims_start = 5,
@@ -211,6 +203,11 @@ if __name__ == "__main__":
 
     args = parse_args()
     cfg = CONFIGS[args.setting]
+
+    if args.sparse_attention:
+        cfg.out_dir = os.path.join("models", "sparse_attention", args.setting)
+    else:
+        cfg.out_dir = os.path.join("models", "dense_attention", args.setting)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
