@@ -56,7 +56,9 @@ In this branch, we implement GQA inside a transformer and evaluate its performan
 
 ```
 src/
-  gqa_experiments.ipynb    # End-to-end experiment notebook
+  gqa_experiments.ipynb    
+  results/
+    gqa/
 ```
 
 The notebook contains:
@@ -66,6 +68,33 @@ The notebook contains:
 4. Training loop
 5. Evaluation (MSE)
 6. Visualization of learning curves
+
+Results:
+
+For each layer configuration (e.g., 1, 2, 4 layers), the notebook saves:
+
+### Per-layer evaluation files
+- `eval_layers_1.csv`
+- `eval_layers_2.csv`
+- `eval_layers_4.csv`
+
+Each CSV contains:
+- `step`
+- `mse_gqa_mean`, `mse_gqa_std`
+- `mse_lsa_mean`, `mse_lsa_std`
+- `mse_gd_mean`, `mse_gd_std`
+- cosine similarity statistics
+- and other logged metrics
+
+### Summary file
+- `summary.json`
+
+This file aggregates the final evaluation statistics for each layer depth and stores:
+- Final mean and standard deviation of MSE for GQA
+- Final mean and standard deviation of MSE for LSA (oracle)
+- Final mean and standard deviation of MSE for GD baseline
+- Cosine similarity statistics
+- Training loss history
 
 ---
 
