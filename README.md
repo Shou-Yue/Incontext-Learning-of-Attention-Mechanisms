@@ -1,17 +1,60 @@
 # Constructed Token GLA Notebook (JAX/Haiku)
 
+## From Linear Attention to Gated Linear Attention (GLA)
+
 ## Overview
 
-This project trains a Transformer model on an in-context linear
-regression task using a constructed-token representation. It compares
-learned behavior against explicit Gradient Descent (GD) baselines and
-analyzes whether the Transformer implicitly learns optimizer-like
-dynamics.
+This project modifies the original paper's implementation by replacing
+**Linear Attention** with **Gated Linear Attention (GLA)** inside the
+Transformer architecture.
 
-The notebook: - Builds synthetic regression tasks - Trains a Transformer
-using JAX + Haiku + Optax - Compares results against explicit gradient
-descent - Measures alignment between Transformer updates and GD -
-Visualizes attention patterns and learned weights
+The goal is to study how introducing gating into the attention mechanism
+changes optimization dynamics, stability, expressivity, and alignment
+with Gradient Descent (GD) in an in-context linear regression setting.
+
+The notebook:
+
+-   Implements constructed-token in-context regression
+-   Replaces linear attention with gated linear attention
+-   Trains the modified Transformer using JAX + Haiku + Optax
+-   Compares results against explicit Gradient Descent baselines
+-   Measures alignment between Transformer updates and GD
+-   Analyzes attention behavior and stability
+
+------------------------------------------------------------------------
+
+## What Changed: Linear Attention → Gated Linear Attention
+
+### Original (Linear Attention)
+
+The paper's implementation uses linear attention of the form:
+
+    Attention(Q, K, V) ≈ φ(Q) (φ(K)^T V)
+
+This removes the quadratic softmax attention cost and produces a
+linear-time attention mechanism.
+
+However, it lacks a mechanism to dynamically modulate information flow
+between tokens.
+
+### Modified (Gated Linear Attention)
+
+We introduce a gating mechanism:
+
+    Output = Gate ⊙ LinearAttention(Q, K, V)
+
+Where:
+
+-   Gate = σ(W_g · input)
+-   σ is a sigmoid (or similar) activation
+-   ⊙ is elementwise multiplication
+
+This allows the model to: - Suppress irrelevant context contributions -
+Dynamically scale update magnitude - Improve stability in recurrent /
+DEQ-style settings
+
+The gating mechanism is implemented in `attn.py` and integrated into the
+Transformer stack in `transformer.py`.
 
 ------------------------------------------------------------------------
 
@@ -19,11 +62,9 @@ Visualizes attention patterns and learned weights
 
 Recommended layout:
 
-project_root/ Constructed_token_GLA.ipynb src/ **init**.py attn.py
-transformer.py train.py data.py config.py
-
-If the files are not under `src/`, modify imports inside the notebook
-accordingly.
+project_root/ Constructed_token_GLA.ipynb src/ **init**.py attn.py \#
+Gated Linear Attention implementation transformer.py \# Transformer
+using GLA train.py data.py config.py
 
 ------------------------------------------------------------------------
 
@@ -41,60 +82,66 @@ Required packages:
 -   matplotlib
 -   pillow
 
-Install missing dependencies:
+Install dependencies:
 
 pip install -U dm-haiku optax ml_collections
 
-If you encounter JAX version mismatch errors, install a compatible pair
-of jax and jaxlib for your hardware (CPU/GPU).
+If JAX errors occur, ensure jax and jaxlib versions are compatible with
+your hardware (CPU/GPU).
 
 ------------------------------------------------------------------------
 
-## Experiment Description
+## Experiment Setup
 
-### Task
+### Task: In-Context Linear Regression
 
-Each training example is a linear regression task:
+Each training example consists of:
 
 -   Context: (x₁, y₁), ..., (xₙ, yₙ)
 -   Query: x\*
 -   Target: y\*
 
-The model must predict y\* using only the in-context examples.
+The model must infer y\* using only context tokens.
 
 ### Constructed Tokens
 
-Each token concatenates inputs and labels:
+Each token is concatenated:
 
 -   Context token: \[x_i \|\| y_i\]
 -   Query token: \[x\_\* \|\| 0\]
 
 The Transformer predicts the missing y component.
 
-### Model
-
-The Transformer can be configured as: - Standard multi-layer attention
-model - Recurrent / weight-shared (DEQ-style) model
-
-Key configuration parameters (in config.py): - dataset_size (number of
-context points) - input_size (dimension of x) - key_size (model width) -
-num_layers, num_heads - training_steps - batch size
-
 ------------------------------------------------------------------------
 
 ## Training Process
 
-Each training step:
+Each training iteration:
 
-1.  Sample batch of regression tasks
+1.  Sample a batch of regression tasks
 2.  Construct tokens
-3.  Forward pass through Transformer
+3.  Forward pass using Gated Linear Attention
 4.  Compute MSE loss on query prediction
 5.  Backpropagate and update parameters
 
-Periodic evaluation includes: - Transformer test loss - GD baseline
-loss - GD++ tuned baseline loss - Cosine similarity alignment metrics -
-Functional interpolation between models
+Periodic evaluation includes:
+
+-   Transformer test loss
+-   GD baseline loss
+-   GD++ tuned baseline loss
+-   Cosine similarity alignment metrics
+-   Functional interpolation between Transformer and GD
+
+------------------------------------------------------------------------
+
+## Why Gated Linear Attention?
+
+The switch from linear attention to GLA allows us to test:
+
+1.  Does gating improve stability in recurrent (DEQ-style) Transformers?
+2.  Does gating improve alignment with Gradient Descent updates?
+3.  Does gating change attention sparsity or structure?
+4.  Does gating improve convergence speed or final loss?
 
 ------------------------------------------------------------------------
 
@@ -102,40 +149,54 @@ Functional interpolation between models
 
 ### Loss Curves
 
--   Decreasing Transformer loss indicates successful learning.
--   Matching GD++ loss suggests optimizer-like behavior.
+If GLA improves optimization, expect:
 
-### Cosine Similarity
+-   Faster convergence
+-   Lower final test loss
+-   More stable training dynamics
 
-Measures alignment between Transformer updates and GD updates.
-Increasing similarity supports the interpretation that the model
-implements gradient-like updates internally.
+### Cosine Similarity (Alignment with GD)
 
-### Interpolation
+Higher cosine similarity indicates that the Transformer's learned
+updates align more closely with true gradient descent steps.
 
-If interpolating between Transformer and GD predictions yields low loss
-at intermediate mixing values, their behaviors are related but not
-identical.
+If GLA improves alignment, this supports the hypothesis that gating
+helps approximate optimizer-like dynamics.
 
 ### Attention Patterns
 
-Structured query-to-context attention suggests algorithmic behavior
-rather than memorization.
+With gating, attention weights may:
+
+-   Become more selective
+-   Suppress noisy context points
+-   Show structured query-to-context flow
 
 ------------------------------------------------------------------------
 
-## Common Issues
+## Expected Observations
 
--   ModuleNotFoundError: ensure files are inside src/ or adjust imports.
--   JAX errors: install matching jax + jaxlib versions.
--   Shape mismatches: restart kernel and run notebook top-to-bottom
-    after modifying configuration values.
+Compared to linear attention, GLA may:
+
+-   Improve conditioning of updates
+-   Reduce instability in recurrent settings
+-   Increase robustness to larger dataset_size
+-   Better approximate iterative optimization dynamics
 
 ------------------------------------------------------------------------
 
 ## Summary
 
-This project studies whether Transformers trained on synthetic
-regression tasks learn implicit gradient descent behavior when using
-constructed tokens. Results should be interpreted using both loss
-metrics and alignment diagnostics rather than loss alone.
+This project re-implements the paper's linear attention architecture
+using Gated Linear Attention to study how gating affects in-context
+learning and optimizer-like behavior.
+
+The key experimental comparison is:
+
+Linear Attention vs Gated Linear Attention
+
+measured through:
+
+-   Test loss
+-   GD alignment
+-   Interpolation behavior
+-   Attention structure
