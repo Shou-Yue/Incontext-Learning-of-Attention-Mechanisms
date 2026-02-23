@@ -25,7 +25,7 @@ SPARSE_GLOBAL_TOKENS = 0
 # training hyperparameters
 BATCH_SIZE = 64
 LEARNING_RATE = 1e-4
-TRAIN_STEPS = 500_001
+TRAIN_STEPS = 100_000
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -60,9 +60,7 @@ def train(args):
             n_positions = MODEL_POSITIONS,
             n_embd = MODEL_EMBED_DIM,
             n_layer = MODEL_ATT_LAYERS,
-            n_head = MODEL_ATT_HEADS,
-            resid_pdrop = 0.0,
-            attn_pdrop = 0.0,
+            n_head = MODEL_ATT_HEADS
         ).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)

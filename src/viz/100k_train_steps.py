@@ -60,9 +60,7 @@ def train(args):
             n_positions = MODEL_POSITIONS,
             n_embd = MODEL_EMBED_DIM,
             n_layer = MODEL_ATT_LAYERS,
-            n_head = MODEL_ATT_HEADS,
-            resid_pdrop = 0.0,
-            attn_pdrop = 0.0,
+            n_head = MODEL_ATT_HEADS
         ).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
