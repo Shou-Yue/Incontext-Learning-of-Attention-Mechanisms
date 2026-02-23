@@ -25,7 +25,7 @@ SPARSE_GLOBAL_TOKENS = 0
 # training hyperparameters
 BATCH_SIZE = 64
 LEARNING_RATE = 1e-4
-TRAIN_STEPS = 500_001
+TRAIN_STEPS = 100_000
 
 def parse_args():
     parser = argparse.ArgumentParser()
