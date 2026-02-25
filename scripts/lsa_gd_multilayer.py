@@ -191,7 +191,9 @@ def main():
                         default=['lsa', 'softmax', 'linformer', 'kernel'],
                         help='Model types to run: lsa, softmax, linformer, kernel')
     parser.add_argument('--lowrank_k_ratio', type=float, default=0.5,
-                        help='Linformer proj_k ratio relative to n_tokens (e.g., 1.0, 0.75, 0.5)')
+                        help='Single low-rank ratio (backward compatible). Ignored if --lowrank_k_ratios is set.')
+    parser.add_argument('--lowrank_k_ratios', type=float, nargs='+', default=None,
+                        help='List of low-rank ratios relative to block size or n_tokens (e.g., 1.0 0.75 0.5)')
     parser.add_argument('--lowrank_share_ef', action='store_true',
                         help='Share E and F projection matrices in low-rank attention')
     parser.add_argument('--lowrank_orth_init', action='store_true',
@@ -202,8 +204,8 @@ def main():
                         help='Freeze E/F projection matrices in low-rank attention')
     parser.add_argument('--lowrank_exact_match', action='store_true',
                         help='For ratio=1.0, force exact softmax equivalence in low-rank path')
-    parser.add_argument('--lowrank_block_size', type=int, default=None,
-                        help='Use blockwise low-rank projection with this block size')
+    parser.add_argument('--lowrank_block_size', type=int, default=2,
+                        help='Use blockwise low-rank projection with this block size (0 disables)')
     
     args = parser.parse_args()
     
@@ -218,6 +220,11 @@ def main():
     # Calculate n_points = 2d + 1
     n_points = 2 * args.d + 1
     n_tokens = n_points + 1
+    block_size = args.lowrank_block_size if args.lowrank_block_size and args.lowrank_block_size > 0 else None
+    if args.lowrank_k_ratios and len(args.lowrank_k_ratios) > 0:
+        lowrank_ratios = args.lowrank_k_ratios
+    else:
+        lowrank_ratios = [args.lowrank_k_ratio]
     
     # Create output directory
     output_dir = Path(args.output_dir)
@@ -236,64 +243,9 @@ def main():
         models = {}
         train_losses_by_model = {}
 
-        for model_type in args.model_types:
-            if model_type == 'lsa':
-                model = MultiLayerLSA(
-                    d=args.d,
-                    num_layers=num_layers,
-                    hidden_dim=args.hidden_dim
-                )
-            elif model_type == 'softmax':
-                model = MultiLayerAttentionModel(
-                    d=args.d,
-                    num_layers=num_layers,
-                    hidden_dim=args.hidden_dim,
-                    attn_type='softmax',
-                    causal=True
-                )
-            elif model_type == 'linformer':
-                proj_k = max(1, int(round(n_tokens * args.lowrank_k_ratio)))
-                identity_proj = args.lowrank_identity_proj and abs(args.lowrank_k_ratio - 1.0) < 1e-9
-                if args.lowrank_exact_match and abs(args.lowrank_k_ratio - 1.0) < 1e-9:
-                    identity_proj = True
-                    freeze_proj = True
-                    normalize_qk = False
-                    learnable_scale = False
-                else:
-                    freeze_proj = args.lowrank_freeze_proj
-                    normalize_qk = True
-                    learnable_scale = True
-
-                model = MultiLayerAttentionModel(
-                    d=args.d,
-                    num_layers=num_layers,
-                    hidden_dim=args.hidden_dim,
-                    attn_type='linformer',
-                    n_tokens=n_tokens,  # include query token
-                    proj_k=proj_k,
-                    lowrank_kwargs={
-                        'share_ef': args.lowrank_share_ef,
-                        'orth_init': args.lowrank_orth_init,
-                        'identity_proj': identity_proj,
-                        'freeze_proj': freeze_proj,
-                        'normalize_qk': normalize_qk,
-                        'learnable_scale': learnable_scale,
-                        'block_size': args.lowrank_block_size
-                    }
-                )
-            elif model_type == 'kernel':
-                model = MultiLayerAttentionModel(
-                    d=args.d,
-                    num_layers=num_layers,
-                    hidden_dim=args.hidden_dim,
-                    attn_type='kernel'
-                )
-            else:
-                raise ValueError(f"Unknown model type: {model_type}")
-
-            print(f"\nModel ({model_type}) parameters: {sum(p.numel() for p in model.parameters()):,}")
-
-            model, train_losses = train_model(
+        def train_and_store(model, name):
+            print(f"\nModel ({name}) parameters: {sum(p.numel() for p in model.parameters()):,}")
+            trained_model, train_losses = train_model(
                 model=model,
                 d=args.d,
                 n_points=n_points,
@@ -304,21 +256,86 @@ def main():
                 sigma=args.sigma,
                 device=device
             )
+            models[name] = trained_model
+            train_losses_by_model[name] = train_losses
 
-            models[model_type] = model
-            train_losses_by_model[model_type] = train_losses
-
-            # Save model checkpoint
-            checkpoint_path = output_dir / f'{model_type}_{num_layers}layer_checkpoint.pt'
+            checkpoint_path = output_dir / f'{name}_{num_layers}layer_checkpoint.pt'
             torch.save({
-                'model_state_dict': model.state_dict(),
+                'model_state_dict': trained_model.state_dict(),
                 'num_layers': num_layers,
                 'd': args.d,
                 'hidden_dim': args.hidden_dim,
                 'train_losses': train_losses,
-                'model_type': model_type
+                'model_type': name
             }, checkpoint_path)
             print(f"Saved checkpoint to {checkpoint_path}")
+
+        for model_type in args.model_types:
+            if model_type == 'lsa':
+                model = MultiLayerLSA(
+                    d=args.d,
+                    num_layers=num_layers,
+                    hidden_dim=args.hidden_dim
+                )
+                train_and_store(model, 'lsa')
+            elif model_type == 'softmax':
+                model = MultiLayerAttentionModel(
+                    d=args.d,
+                    num_layers=num_layers,
+                    hidden_dim=args.hidden_dim,
+                    attn_type='softmax',
+                    causal=True
+                )
+                train_and_store(model, 'softmax')
+            elif model_type in ('linformer', 'lowrank'):
+                for ratio in lowrank_ratios:
+                    if block_size is None:
+                        proj_k = max(1, int(round(n_tokens * ratio)))
+                        name = f"lowrank_k{ratio:g}"
+                    else:
+                        proj_k = max(1, int(round(block_size * ratio)))
+                        name = f"lowrank_block{block_size}_k{ratio:g}"
+
+                    identity_proj = args.lowrank_identity_proj and abs(ratio - 1.0) < 1e-9
+                    if args.lowrank_exact_match and abs(ratio - 1.0) < 1e-9:
+                        identity_proj = True
+                        freeze_proj = True
+                        normalize_qk = False
+                        learnable_scale = False
+                    else:
+                        freeze_proj = args.lowrank_freeze_proj
+                        normalize_qk = True
+                        learnable_scale = True
+
+                    model = MultiLayerAttentionModel(
+                        d=args.d,
+                        num_layers=num_layers,
+                        hidden_dim=args.hidden_dim,
+                        attn_type='linformer',
+                        n_tokens=n_tokens,  # include query token
+                        proj_k=proj_k,
+                        lowrank_kwargs={
+                            'share_ef': args.lowrank_share_ef,
+                            'orth_init': args.lowrank_orth_init,
+                            'identity_proj': identity_proj,
+                            'freeze_proj': freeze_proj,
+                            'normalize_qk': normalize_qk,
+                            'learnable_scale': learnable_scale,
+                            'block_size': block_size
+                        }
+                    )
+                    train_and_store(model, name)
+            elif model_type == 'kernel':
+                model = MultiLayerAttentionModel(
+                    d=args.d,
+                    num_layers=num_layers,
+                    hidden_dim=args.hidden_dim,
+                    attn_type='kernel',
+                    causal=True
+                )
+                train_and_store(model, 'kernel')
+            else:
+                raise ValueError(f"Unknown model type: {model_type}")
 
         # Evaluate all models on shared tasks
         results = evaluate_models(
@@ -352,15 +369,29 @@ def main():
     print("\n" + "="*70)
     print("SUMMARY TABLE")
     print("="*70)
-    print(f"{'Layers':<10} {'MSE GD':<20} {'MSE LSA':<20} {'MSE Softmax':<20} {'MSE Linformer':<20} {'MSE Kernel':<20}")
+    lowrank_keys = set()
+    for res in all_results:
+        for k in res.keys():
+            if k.startswith("mse_lowrank_") and k.endswith("_mean"):
+                lowrank_keys.add(k.replace("_mean", ""))
+    lowrank_keys = sorted(lowrank_keys)
+
+    header = f"{'Layers':<10} {'MSE GD':<20} {'MSE LSA':<20} {'MSE Softmax':<20} {'MSE Kernel':<20}"
+    for lk in lowrank_keys:
+        header += f" {lk.replace('mse_', ''):<20}"
+    print(header)
     print("-"*70)
     for res in all_results:
-        print(f"{res['num_layers']:<10} "
-              f"{res['mse_gd_mean']:.6f} ± {res['mse_gd_std']:.4f}    "
-              f"{res.get('mse_lsa_mean', float('nan')):.6f} ± {res.get('mse_lsa_std', float('nan')):.4f}    "
-              f"{res.get('mse_softmax_mean', float('nan')):.6f} ± {res.get('mse_softmax_std', float('nan')):.4f}    "
-              f"{res.get('mse_linformer_mean', float('nan')):.6f} ± {res.get('mse_linformer_std', float('nan')):.4f}    "
-              f"{res.get('mse_kernel_mean', float('nan')):.6f} ± {res.get('mse_kernel_std', float('nan')):.4f}")
+        row = (f"{res['num_layers']:<10} "
+               f"{res['mse_gd_mean']:.6f} ± {res['mse_gd_std']:.4f}    "
+               f"{res.get('mse_lsa_mean', float('nan')):.6f} ± {res.get('mse_lsa_std', float('nan')):.4f}    "
+               f"{res.get('mse_softmax_mean', float('nan')):.6f} ± {res.get('mse_softmax_std', float('nan')):.4f}    "
+               f"{res.get('mse_kernel_mean', float('nan')):.6f} ± {res.get('mse_kernel_std', float('nan')):.4f}")
+        for lk in lowrank_keys:
+            mean = res.get(f"{lk}_mean", float('nan'))
+            std = res.get(f"{lk}_std", float('nan'))
+            row += f" {mean:.6f} ± {std:.4f}"
+        print(row)
     print("="*70)
 
 

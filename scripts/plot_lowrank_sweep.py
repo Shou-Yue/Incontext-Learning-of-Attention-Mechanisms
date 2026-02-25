@@ -47,6 +47,8 @@ def main():
         for k in results[0].keys():
             if k.startswith("mse_lowrank_k") and k.endswith("_mean"):
                 series_keys.append(k.replace("_mean", "").replace("mse_", ""))
+            if k.startswith("mse_lowrank_block") and k.endswith("_mean"):
+                series_keys.append(k.replace("_mean", "").replace("mse_", ""))
     series_keys = sorted(series_keys)
 
     # Build plots
@@ -62,6 +64,16 @@ def main():
     # Softmax
     mse_soft, mse_soft_std = _extract_series(results, "mse_softmax")
     ax1.errorbar(layers, mse_soft, yerr=mse_soft_std, fmt='-o', label="Softmax")
+
+    # Kernel baseline (optional)
+    if results and "mse_kernel_mean" in results[0]:
+        mse_kernel, mse_kernel_std = _extract_series(results, "mse_kernel")
+        ax1.errorbar(layers, mse_kernel, yerr=mse_kernel_std, fmt='-^', label="Kernel")
+
+    # LSA baseline (optional)
+    if results and "mse_lsa_mean" in results[0]:
+        mse_lsa, mse_lsa_std = _extract_series(results, "mse_lsa")
+        ax1.errorbar(layers, mse_lsa, yerr=mse_lsa_std, fmt='-d', label="LSA")
 
     # Low-rank variants
     markers = ['^', 'v', 'D', 'P', 'X']
@@ -82,6 +94,14 @@ def main():
     cos_soft, cos_soft_std = _extract_series(results, "cosine_sim_softmax")
     ax2.errorbar(layers, cos_soft, yerr=cos_soft_std, fmt='-o', label="Softmax vs GD")
 
+    if results and "cosine_sim_kernel_mean" in results[0]:
+        cos_kernel, cos_kernel_std = _extract_series(results, "cosine_sim_kernel")
+        ax2.errorbar(layers, cos_kernel, yerr=cos_kernel_std, fmt='-^', label="Kernel vs GD")
+
+    if results and "cosine_sim_lsa_mean" in results[0]:
+        cos_lsa, cos_lsa_std = _extract_series(results, "cosine_sim_lsa")
+        ax2.errorbar(layers, cos_lsa, yerr=cos_lsa_std, fmt='-d', label="LSA vs GD")
+
     for i, sk in enumerate(series_keys):
         cos_vals, cos_std = _extract_series(results, f"cosine_sim_{sk}")
         ax2.errorbar(layers, cos_vals, yerr=cos_std,
@@ -98,6 +118,10 @@ def main():
     ax3a.set_ylabel("Mean Squared Error")
     ax3a.errorbar(layers, mse_gd, yerr=mse_gd_std, fmt='-s', label="T-step GD")
     ax3a.errorbar(layers, mse_soft, yerr=mse_soft_std, fmt='-o', label="Softmax")
+    if results and "mse_kernel_mean" in results[0]:
+        ax3a.errorbar(layers, mse_kernel, yerr=mse_kernel_std, fmt='-^', label="Kernel")
+    if results and "mse_lsa_mean" in results[0]:
+        ax3a.errorbar(layers, mse_lsa, yerr=mse_lsa_std, fmt='-d', label="LSA")
     for i, sk in enumerate(series_keys):
         mse_vals, mse_std = _extract_series(results, f"mse_{sk}")
         ax3a.errorbar(layers, mse_vals, yerr=mse_std,
@@ -110,6 +134,10 @@ def main():
     ax3b.set_ylabel("Cosine Similarity")
     ax3b.axhline(1.0, color='red', linestyle='--', linewidth=1, label="Perfect Alignment")
     ax3b.errorbar(layers, cos_soft, yerr=cos_soft_std, fmt='-o', label="Softmax vs GD")
+    if results and "cosine_sim_kernel_mean" in results[0]:
+        ax3b.errorbar(layers, cos_kernel, yerr=cos_kernel_std, fmt='-^', label="Kernel vs GD")
+    if results and "cosine_sim_lsa_mean" in results[0]:
+        ax3b.errorbar(layers, cos_lsa, yerr=cos_lsa_std, fmt='-d', label="LSA vs GD")
     for i, sk in enumerate(series_keys):
         cos_vals, cos_std = _extract_series(results, f"cosine_sim_{sk}")
         ax3b.errorbar(layers, cos_vals, yerr=cos_std,

@@ -192,15 +192,20 @@ class KernelLinearAttentionBlock(_BaseAttentionBlock):
     Uses phi(x) = elu(x) + 1 as in linear transformer literature.
     """
 
-    def __init__(self, d, hidden_dim=None, eps=1e-6, normalize_qk=True):
+    def __init__(self, d, hidden_dim=None, eps=1e-6, normalize_qk=False,
+                 causal=False, use_denominator=False):
         super().__init__(d, hidden_dim)
         self.eps = eps
         self.normalize_qk = normalize_qk
+        self.causal = causal
+        self.use_denominator = use_denominator
         self.scale = nn.Parameter(torch.tensor(1.0))
 
     @staticmethod
     def _phi(x):
-        return F.elu(x) + 1.0
+        # Remove the +1 bias to avoid near-uniform attention early in training.
+        # This keeps sign information and improves GD-alignment on this task.
+        return F.elu(x)
 
     def _attention(self, Q, K, V):
         # Feature map
@@ -212,16 +217,19 @@ class KernelLinearAttentionBlock(_BaseAttentionBlock):
         Q_phi = self._phi(Q) * scale  # (B, N, H)
         K_phi = self._phi(K)  # (B, N, H)
 
-        # Compute K^T V once
-        KV = torch.bmm(K_phi.transpose(1, 2), V)  # (B, H, token_dim)
+        # Full attention scores for optional causal masking
+        scores = torch.bmm(Q_phi, K_phi.transpose(1, 2))  # (B, N, N)
+        scores = scores * (F.softplus(self.scale) / math.sqrt(self.hidden_dim))
 
-        # Normalizer: Q_phi * sum(K_phi)
-        K_sum = K_phi.sum(dim=1)  # (B, H)
-        denom = torch.bmm(Q_phi, K_sum.unsqueeze(-1)).squeeze(-1)  # (B, N)
+        if self.causal:
+            n_tokens = scores.size(-1)
+            mask = torch.tril(torch.ones(n_tokens, n_tokens, device=scores.device))
+            scores = scores * mask
 
-        # Compute output
-        out = torch.bmm(Q_phi, KV)  # (B, N, token_dim)
-        out = out / (denom.unsqueeze(-1) + self.eps)
+        out = torch.bmm(scores, V)  # (B, N, token_dim)
+        if self.use_denominator:
+            denom = scores.sum(dim=-1, keepdim=True)  # (B, N, 1)
+            out = out / (denom + self.eps)
         return out
 
 
@@ -254,7 +262,13 @@ class MultiLayerAttentionModel(nn.Module):
                 **lowrank_kwargs
             )
         elif attn_type == "kernel":
-            block_fn = lambda: KernelLinearAttentionBlock(d, self.hidden_dim)
+            block_fn = lambda: KernelLinearAttentionBlock(
+                d,
+                self.hidden_dim,
+                normalize_qk=False,
+                causal=causal,
+                use_denominator=False
+            )
         else:
             raise ValueError(f"Unknown attn_type: {attn_type}")
 

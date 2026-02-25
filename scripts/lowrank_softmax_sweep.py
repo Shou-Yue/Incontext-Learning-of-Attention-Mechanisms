@@ -20,6 +20,7 @@ from tqdm import tqdm
 sys.path.append(str(Path(__file__).parent.parent))
 
 from src.models.attention_variants import MultiLayerAttentionModel
+from src.models.lsa import MultiLayerLSA
 from src.evaluation.gd_baseline import (
     generate_linear_regression_task,
     gd_t_steps,
@@ -130,7 +131,13 @@ def main():
 
     parser.add_argument('--proj_k_ratios', type=float, nargs='+',
                         default=[1.0, 0.75, 0.5],
-                        help='Fractions of n_tokens for low-rank k')
+                        help='Fractions of tokens per block for low-rank k')
+    parser.add_argument('--block_size', type=int, default=2,
+                        help='Block size for local projections (use 0 to disable)')
+    parser.add_argument('--include_kernel', action='store_true',
+                        help='Include kernelized linear attention baseline')
+    parser.add_argument('--include_lsa', action='store_true',
+                        help='Include LSA baseline (linear self-attention)')
     parser.add_argument('--share_ef', action='store_true',
                         help='Share E and F projection matrices')
     parser.add_argument('--orth_init', action='store_true',
@@ -151,6 +158,7 @@ def main():
 
     n_points = 2 * args.d + 1
     n_tokens = n_points + 1
+    block_size = None if args.block_size == 0 else args.block_size
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -186,10 +194,58 @@ def main():
         )
         models['softmax'] = softmax_model
 
+        # Kernelized linear attention baseline
+        if args.include_kernel:
+            kernel_model = MultiLayerAttentionModel(
+                d=args.d,
+                num_layers=num_layers,
+                hidden_dim=args.hidden_dim,
+                attn_type='kernel',
+                causal=False
+            )
+            print(f"\nModel (kernel) parameters: {sum(p.numel() for p in kernel_model.parameters()):,}")
+            kernel_model = train_model(
+                model=kernel_model,
+                d=args.d,
+                n_points=n_points,
+                num_tasks=args.num_train_tasks,
+                batch_size=args.batch_size,
+                num_epochs=args.num_epochs,
+                lr=args.lr,
+                sigma=args.sigma,
+                device=device
+            )
+            models['kernel'] = kernel_model
+
+        # LSA baseline
+        if args.include_lsa:
+            lsa_model = MultiLayerLSA(
+                d=args.d,
+                num_layers=num_layers,
+                hidden_dim=args.hidden_dim
+            )
+            print(f"\nModel (lsa) parameters: {sum(p.numel() for p in lsa_model.parameters()):,}")
+            lsa_model = train_model(
+                model=lsa_model,
+                d=args.d,
+                n_points=n_points,
+                num_tasks=args.num_train_tasks,
+                batch_size=args.batch_size,
+                num_epochs=args.num_epochs,
+                lr=args.lr,
+                sigma=args.sigma,
+                device=device
+            )
+            models['lsa'] = lsa_model
+
         # Low-rank variants
         for ratio in args.proj_k_ratios:
-            proj_k = max(1, int(round(n_tokens * ratio)))
-            name = f"lowrank_k{ratio:g}"
+            if block_size is None:
+                proj_k = max(1, int(round(n_tokens * ratio)))
+                name = f"lowrank_k{ratio:g}"
+            else:
+                proj_k = max(1, int(round(block_size * ratio)))
+                name = f"lowrank_block{block_size}_k{ratio:g}"
             identity_proj = args.identity_proj and abs(ratio - 1.0) < 1e-9
             if args.exact_match and abs(ratio - 1.0) < 1e-9:
                 identity_proj = True
@@ -213,7 +269,8 @@ def main():
                     'identity_proj': identity_proj,
                     'freeze_proj': freeze_proj,
                     'normalize_qk': normalize_qk,
-                    'learnable_scale': learnable_scale
+                    'learnable_scale': learnable_scale,
+                    'block_size': block_size
                 }
             )
             print(f"\nModel ({name}) parameters: {sum(p.numel() for p in lowrank_model.parameters()):,}")

@@ -119,6 +119,13 @@ Typical outputs are written under `results/` and `checkpoints/`:
 - Evaluation JSON files and plots from scripts.
 - Checkpoints and training logs from `src/training/train.py`.
 
+## Reproducibility
+
+- Config-driven runs live in `configs/` (e.g., `configs/train_linear_20d.json`, `configs/test_local.json`, `configs/validate_50k.json`).
+- Deterministic scripts for each experiment are under `scripts/` with CLI flags for hyperparameters and output directories.
+- Plots and metrics are saved to `results/` for each run (JSON + PNG).
+- Training checkpoints and logs are saved to `checkpoints/` for re‑evaluation.
+
 ## Notes
 
 - Prompts are interleaved `[x1, y1, x2, y2, ..., xn, yn]` for transformer training.
@@ -129,3 +136,4 @@ Typical outputs are written under `results/` and `checkpoints/`:
 
 - Garg et al., “What Can Transformers Learn In‑Context? A Case Study of Simple Function Classes” (NeurIPS 2022)
 - Oswald et al., “Transformers Learn In‑Context by Gradient Descent” (NeurIPS 2023)
+- x

@@ -12,6 +12,25 @@ from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 
+
+def _extract_series(results, key_prefix):
+    vals = []
+    stds = []
+    for r in results:
+        vals.append(r.get(f"{key_prefix}_mean", np.nan))
+        stds.append(r.get(f"{key_prefix}_std", np.nan))
+    return np.array(vals), np.array(stds)
+
+
+def _collect_lowrank_keys(results, prefix):
+    keys = set()
+    target = f"{prefix}lowrank_"
+    for r in results:
+        for k in r.keys():
+            if k.startswith(target) and k.endswith("_mean"):
+                keys.add(k.replace("_mean", "").replace(prefix, ""))
+    return sorted(keys)
+
 def plot_mse_comparison(results, output_path):
     """
     Plot MSE comparison between LSA and GD across different num_layers.
@@ -22,46 +41,48 @@ def plot_mse_comparison(results, output_path):
     """
     num_layers_list = [r['num_layers'] for r in results]
     
-    lsa_means = [r.get('mse_lsa_mean') for r in results]
-    lsa_stds = [r.get('mse_lsa_std') for r in results]
-    gd_means = [r.get('mse_gd_mean') for r in results]
-    gd_stds = [r.get('mse_gd_std') for r in results]
+    lsa_means = np.array([r.get('mse_lsa_mean', np.nan) for r in results], dtype=float)
+    lsa_stds = np.array([r.get('mse_lsa_std', np.nan) for r in results], dtype=float)
+    gd_means = np.array([r.get('mse_gd_mean', np.nan) for r in results], dtype=float)
+    gd_stds = np.array([r.get('mse_gd_std', np.nan) for r in results], dtype=float)
 
-    softmax_means = [r.get('mse_softmax_mean') for r in results]
-    softmax_stds = [r.get('mse_softmax_std') for r in results]
-    linformer_means = [r.get('mse_linformer_mean') for r in results]
-    linformer_stds = [r.get('mse_linformer_std') for r in results]
-    kernel_means = [r.get('mse_kernel_mean') for r in results]
-    kernel_stds = [r.get('mse_kernel_std') for r in results]
+    softmax_means = np.array([r.get('mse_softmax_mean', np.nan) for r in results], dtype=float)
+    softmax_stds = np.array([r.get('mse_softmax_std', np.nan) for r in results], dtype=float)
+    kernel_means = np.array([r.get('mse_kernel_mean', np.nan) for r in results], dtype=float)
+    kernel_stds = np.array([r.get('mse_kernel_std', np.nan) for r in results], dtype=float)
+
+    lowrank_keys = _collect_lowrank_keys(results, "mse_")
     
     fig, ax = plt.subplots(figsize=(10, 6))
     
     # Plot LSA
-    if all(v is not None for v in lsa_means):
+    if np.isfinite(lsa_means).any():
         ax.errorbar(num_layers_list, lsa_means, yerr=lsa_stds,
                     marker='o', linewidth=2, markersize=8, capsize=5,
                     label='LSA', color='#4472C4')
 
     # Plot GD
-    if all(v is not None for v in gd_means):
+    if np.isfinite(gd_means).any():
         ax.errorbar(num_layers_list, gd_means, yerr=gd_stds,
                     marker='s', linewidth=2, markersize=8, capsize=5,
                     label='T-step GD', color='#ED7D31')
 
     # Plot Softmax
-    if all(v is not None for v in softmax_means):
+    if np.isfinite(softmax_means).any():
         ax.errorbar(num_layers_list, softmax_means, yerr=softmax_stds,
                     marker='^', linewidth=2, markersize=8, capsize=5,
                     label='Softmax', color='#5B9BD5')
 
-    # Plot Linformer (low-rank softmax)
-    if all(v is not None for v in linformer_means):
-        ax.errorbar(num_layers_list, linformer_means, yerr=linformer_stds,
-                    marker='v', linewidth=2, markersize=8, capsize=5,
-                    label='Low-rank Softmax', color='#C00000')
+    # Plot Low-rank variants
+    markers = ['v', 'P', 'X', '*']
+    for i, sk in enumerate(lowrank_keys):
+        mse_vals, mse_std = _extract_series(results, f"mse_{sk}")
+        ax.errorbar(num_layers_list, mse_vals, yerr=mse_std,
+                    marker=markers[i % len(markers)], linewidth=2, markersize=8, capsize=5,
+                    label=sk.replace("lowrank_", "Low-rank "), color='#C00000')
 
     # Plot Kernelized Linear
-    if all(v is not None for v in kernel_means):
+    if np.isfinite(kernel_means).any():
         ax.errorbar(num_layers_list, kernel_means, yerr=kernel_stds,
                     marker='D', linewidth=2, markersize=8, capsize=5,
                     label='Kernelized Linear', color='#70AD47')
@@ -89,34 +110,36 @@ def plot_cosine_similarity(results, output_path):
     """
     num_layers_list = [r['num_layers'] for r in results]
     
-    cos_lsa_means = [r.get('cosine_sim_lsa_mean') or r.get('cosine_sim_mean') for r in results]
-    cos_lsa_stds = [r.get('cosine_sim_lsa_std') or r.get('cosine_sim_std') for r in results]
-    cos_softmax_means = [r.get('cosine_sim_softmax_mean') for r in results]
-    cos_softmax_stds = [r.get('cosine_sim_softmax_std') for r in results]
-    cos_linformer_means = [r.get('cosine_sim_linformer_mean') for r in results]
-    cos_linformer_stds = [r.get('cosine_sim_linformer_std') for r in results]
-    cos_kernel_means = [r.get('cosine_sim_kernel_mean') for r in results]
-    cos_kernel_stds = [r.get('cosine_sim_kernel_std') for r in results]
+    cos_lsa_means = np.array([r.get('cosine_sim_lsa_mean', r.get('cosine_sim_mean', np.nan)) for r in results], dtype=float)
+    cos_lsa_stds = np.array([r.get('cosine_sim_lsa_std', r.get('cosine_sim_std', np.nan)) for r in results], dtype=float)
+    cos_softmax_means = np.array([r.get('cosine_sim_softmax_mean', np.nan) for r in results], dtype=float)
+    cos_softmax_stds = np.array([r.get('cosine_sim_softmax_std', np.nan) for r in results], dtype=float)
+    cos_kernel_means = np.array([r.get('cosine_sim_kernel_mean', np.nan) for r in results], dtype=float)
+    cos_kernel_stds = np.array([r.get('cosine_sim_kernel_std', np.nan) for r in results], dtype=float)
+
+    lowrank_keys = _collect_lowrank_keys(results, "cosine_sim_")
+    markers = ['v', 'P', 'X', '*']
     
     fig, ax = plt.subplots(figsize=(10, 6))
     
     # Plot cosine similarity (LSA baseline)
-    if all(v is not None for v in cos_lsa_means):
+    if np.isfinite(cos_lsa_means).any():
         ax.errorbar(num_layers_list, cos_lsa_means, yerr=cos_lsa_stds,
                     marker='o', linewidth=2, markersize=8, capsize=5,
                     label='LSA vs GD', color='#4472C4')
 
-    if all(v is not None for v in cos_softmax_means):
+    if np.isfinite(cos_softmax_means).any():
         ax.errorbar(num_layers_list, cos_softmax_means, yerr=cos_softmax_stds,
                     marker='^', linewidth=2, markersize=8, capsize=5,
                     label='Softmax vs GD', color='#5B9BD5')
 
-    if all(v is not None for v in cos_linformer_means):
-        ax.errorbar(num_layers_list, cos_linformer_means, yerr=cos_linformer_stds,
-                    marker='v', linewidth=2, markersize=8, capsize=5,
-                    label='Low-rank Softmax vs GD', color='#C00000')
+    for i, sk in enumerate(lowrank_keys):
+        cos_vals, cos_std = _extract_series(results, f"cosine_sim_{sk}")
+        ax.errorbar(num_layers_list, cos_vals, yerr=cos_std,
+                    marker=markers[i % len(markers)], linewidth=2, markersize=8, capsize=5,
+                    label=f"{sk.replace('lowrank_', 'Low-rank ')} vs GD", color='#C00000')
 
-    if all(v is not None for v in cos_kernel_means):
+    if np.isfinite(cos_kernel_means).any():
         ax.errorbar(num_layers_list, cos_kernel_means, yerr=cos_kernel_stds,
                     marker='D', linewidth=2, markersize=8, capsize=5,
                     label='Kernelized Linear vs GD', color='#70AD47')
@@ -148,46 +171,46 @@ def plot_combined(results, output_path):
     """
     num_layers_list = [r['num_layers'] for r in results]
     
-    lsa_means = [r.get('mse_lsa_mean') for r in results]
-    lsa_stds = [r.get('mse_lsa_std') for r in results]
-    gd_means = [r.get('mse_gd_mean') for r in results]
-    gd_stds = [r.get('mse_gd_std') for r in results]
-    softmax_means = [r.get('mse_softmax_mean') for r in results]
-    softmax_stds = [r.get('mse_softmax_std') for r in results]
-    linformer_means = [r.get('mse_linformer_mean') for r in results]
-    linformer_stds = [r.get('mse_linformer_std') for r in results]
-    kernel_means = [r.get('mse_kernel_mean') for r in results]
-    kernel_stds = [r.get('mse_kernel_std') for r in results]
+    lsa_means = np.array([r.get('mse_lsa_mean', np.nan) for r in results], dtype=float)
+    lsa_stds = np.array([r.get('mse_lsa_std', np.nan) for r in results], dtype=float)
+    gd_means = np.array([r.get('mse_gd_mean', np.nan) for r in results], dtype=float)
+    gd_stds = np.array([r.get('mse_gd_std', np.nan) for r in results], dtype=float)
+    softmax_means = np.array([r.get('mse_softmax_mean', np.nan) for r in results], dtype=float)
+    softmax_stds = np.array([r.get('mse_softmax_std', np.nan) for r in results], dtype=float)
+    kernel_means = np.array([r.get('mse_kernel_mean', np.nan) for r in results], dtype=float)
+    kernel_stds = np.array([r.get('mse_kernel_std', np.nan) for r in results], dtype=float)
 
-    cos_lsa_means = [r.get('cosine_sim_lsa_mean') or r.get('cosine_sim_mean') for r in results]
-    cos_lsa_stds = [r.get('cosine_sim_lsa_std') or r.get('cosine_sim_std') for r in results]
-    cos_softmax_means = [r.get('cosine_sim_softmax_mean') for r in results]
-    cos_softmax_stds = [r.get('cosine_sim_softmax_std') for r in results]
-    cos_linformer_means = [r.get('cosine_sim_linformer_mean') for r in results]
-    cos_linformer_stds = [r.get('cosine_sim_linformer_std') for r in results]
-    cos_kernel_means = [r.get('cosine_sim_kernel_mean') for r in results]
-    cos_kernel_stds = [r.get('cosine_sim_kernel_std') for r in results]
+    cos_lsa_means = np.array([r.get('cosine_sim_lsa_mean', r.get('cosine_sim_mean', np.nan)) for r in results], dtype=float)
+    cos_lsa_stds = np.array([r.get('cosine_sim_lsa_std', r.get('cosine_sim_std', np.nan)) for r in results], dtype=float)
+    cos_softmax_means = np.array([r.get('cosine_sim_softmax_mean', np.nan) for r in results], dtype=float)
+    cos_softmax_stds = np.array([r.get('cosine_sim_softmax_std', np.nan) for r in results], dtype=float)
+    cos_kernel_means = np.array([r.get('cosine_sim_kernel_mean', np.nan) for r in results], dtype=float)
+    cos_kernel_stds = np.array([r.get('cosine_sim_kernel_std', np.nan) for r in results], dtype=float)
+
+    lowrank_keys = _collect_lowrank_keys(results, "mse_")
     
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
     
     # Plot 1: MSE comparison
-    if all(v is not None for v in lsa_means):
+    if np.isfinite(lsa_means).any():
         ax1.errorbar(num_layers_list, lsa_means, yerr=lsa_stds,
                     marker='o', linewidth=2, markersize=8, capsize=5,
                     label='LSA', color='#4472C4')
-    if all(v is not None for v in gd_means):
+    if np.isfinite(gd_means).any():
         ax1.errorbar(num_layers_list, gd_means, yerr=gd_stds,
                     marker='s', linewidth=2, markersize=8, capsize=5,
                     label='T-step GD', color='#ED7D31')
-    if all(v is not None for v in softmax_means):
+    if np.isfinite(softmax_means).any():
         ax1.errorbar(num_layers_list, softmax_means, yerr=softmax_stds,
                     marker='^', linewidth=2, markersize=8, capsize=5,
                     label='Softmax', color='#5B9BD5')
-    if all(v is not None for v in linformer_means):
-        ax1.errorbar(num_layers_list, linformer_means, yerr=linformer_stds,
-                    marker='v', linewidth=2, markersize=8, capsize=5,
-                    label='Low-rank Softmax', color='#C00000')
-    if all(v is not None for v in kernel_means):
+    markers = ['v', 'P', 'X', '*']
+    for i, sk in enumerate(lowrank_keys):
+        mse_vals, mse_std = _extract_series(results, f"mse_{sk}")
+        ax1.errorbar(num_layers_list, mse_vals, yerr=mse_std,
+                    marker=markers[i % len(markers)], linewidth=2, markersize=8, capsize=5,
+                    label=sk.replace("lowrank_", "Low-rank "), color='#C00000')
+    if np.isfinite(kernel_means).any():
         ax1.errorbar(num_layers_list, kernel_means, yerr=kernel_stds,
                     marker='D', linewidth=2, markersize=8, capsize=5,
                     label='Kernelized Linear', color='#70AD47')
@@ -199,19 +222,20 @@ def plot_combined(results, output_path):
     ax1.set_xticks(num_layers_list)
     
     # Plot 2: Cosine similarity
-    if all(v is not None for v in cos_lsa_means):
+    if np.isfinite(cos_lsa_means).any():
         ax2.errorbar(num_layers_list, cos_lsa_means, yerr=cos_lsa_stds,
                     marker='o', linewidth=2, markersize=8, capsize=5,
                     label='LSA vs GD', color='#4472C4')
-    if all(v is not None for v in cos_softmax_means):
+    if np.isfinite(cos_softmax_means).any():
         ax2.errorbar(num_layers_list, cos_softmax_means, yerr=cos_softmax_stds,
                     marker='^', linewidth=2, markersize=8, capsize=5,
                     label='Softmax vs GD', color='#5B9BD5')
-    if all(v is not None for v in cos_linformer_means):
-        ax2.errorbar(num_layers_list, cos_linformer_means, yerr=cos_linformer_stds,
-                    marker='v', linewidth=2, markersize=8, capsize=5,
-                    label='Low-rank Softmax vs GD', color='#C00000')
-    if all(v is not None for v in cos_kernel_means):
+    for i, sk in enumerate(lowrank_keys):
+        cos_vals, cos_std = _extract_series(results, f"cosine_sim_{sk}")
+        ax2.errorbar(num_layers_list, cos_vals, yerr=cos_std,
+                    marker=markers[i % len(markers)], linewidth=2, markersize=8, capsize=5,
+                    label=f"{sk.replace('lowrank_', 'Low-rank ')} vs GD", color='#C00000')
+    if np.isfinite(cos_kernel_means).any():
         ax2.errorbar(num_layers_list, cos_kernel_means, yerr=cos_kernel_stds,
                     marker='D', linewidth=2, markersize=8, capsize=5,
                     label='Kernelized Linear vs GD', color='#70AD47')
@@ -243,13 +267,23 @@ def save_results_table(results, output_path):
         "mse_gd_mean", "mse_gd_std",
         "mse_lsa_mean", "mse_lsa_std",
         "mse_softmax_mean", "mse_softmax_std",
-        "mse_linformer_mean", "mse_linformer_std",
         "mse_kernel_mean", "mse_kernel_std",
         "cosine_sim_lsa_mean", "cosine_sim_lsa_std",
         "cosine_sim_softmax_mean", "cosine_sim_softmax_std",
-        "cosine_sim_linformer_mean", "cosine_sim_linformer_std",
         "cosine_sim_kernel_mean", "cosine_sim_kernel_std",
     ]
+
+    lowrank_keys = set()
+    for r in results:
+        for k in r.keys():
+            if k.startswith("mse_lowrank_") and k.endswith("_mean"):
+                lowrank_keys.add(k.replace("_mean", ""))
+    lowrank_keys = sorted(lowrank_keys)
+    for base in lowrank_keys:
+        headers.append(f"{base}_mean")
+        headers.append(f"{base}_std")
+        headers.append(f"{base.replace('mse_', 'cosine_sim_')}_mean")
+        headers.append(f"{base.replace('mse_', 'cosine_sim_')}_std")
 
     def _get(r, key, fallback_key=None):
         if key in r:
@@ -261,28 +295,9 @@ def save_results_table(results, output_path):
     with open(output_path, 'w') as f:
         f.write(",".join(headers) + "\n")
         for r in results:
-            row = [
-                r["num_layers"],
-                _get(r, "mse_gd_mean"),
-                _get(r, "mse_gd_std"),
-                _get(r, "mse_lsa_mean"),
-                _get(r, "mse_lsa_std"),
-                _get(r, "mse_softmax_mean"),
-                _get(r, "mse_softmax_std"),
-                _get(r, "mse_linformer_mean"),
-                _get(r, "mse_linformer_std"),
-                _get(r, "mse_kernel_mean"),
-                _get(r, "mse_kernel_std"),
-                _get(r, "cosine_sim_lsa_mean", "cosine_sim_mean"),
-                _get(r, "cosine_sim_lsa_std", "cosine_sim_std"),
-                _get(r, "cosine_sim_softmax_mean"),
-                _get(r, "cosine_sim_softmax_std"),
-                _get(r, "cosine_sim_linformer_mean"),
-                _get(r, "cosine_sim_linformer_std"),
-                _get(r, "cosine_sim_kernel_mean"),
-                _get(r, "cosine_sim_kernel_std"),
-            ]
-
+            row = []
+            for h in headers:
+                row.append(_get(r, h))
             f.write(",".join([f"{v}" for v in row]) + "\n")
     
     print(f"Saved results table to {output_path}")
