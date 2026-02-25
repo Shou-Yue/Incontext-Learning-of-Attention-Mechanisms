@@ -1,20 +1,20 @@
-## Grouped Query Attention (GQA) – In-Context Learning Experiments
+# Grouped Query Attention (GQA) – In-Context Learning Experiments
 
 This branch contains the implementation and experiments for **Grouped Query Attention (GQA)** as part of our team project:
 
 **In-Context Learning of Attention Mechanisms**
 
-This branch focuses specifically on **Grouped Query Attention**.
+This branch focuses specifically on evaluating how **Grouped Query Attention** affects a transformer's ability to perform in-context learning on synthetic regression tasks.
 
 ---
 
 ## 1. Project Overview and Motivation
 
-The goal of this project is to analyze how different attention mechanisms affect a transformer's ability to perform **in-context learning (ICL)** on synthetic regression tasks.
+The goal of this project is to analyze how different attention mechanisms affect a transformer's ability to perform **in-context learning (ICL)**.
 
 In-context learning refers to a model’s ability to infer a task from examples provided in the input sequence — without updating model weights.
 
-Recent theoretical work suggests that the structure of the attention mechanism plays a key role in enabling in-context learning behavior in transformers.
+Recent theoretical work (Oswald et al., 2023) suggests that the structure of the attention mechanism plays a key role in enabling gradient descent–like behavior inside transformers.
 
 Our central research question is:
 
@@ -22,100 +22,180 @@ Our central research question is:
 
 To answer this, each team member implements and evaluates a transformer using a different attention variant under the same experimental setup. This branch analyzes the behavior of **Grouped Query Attention (GQA)** within that controlled framework.
 
-
 ---
 
 ## 2. What is Grouped Query Attention (GQA)?
 
 In standard multi-head attention:
+
 - Each attention head has its own **Query (Q)**, **Key (K)**, and **Value (V)** projections.
 
 In **Grouped Query Attention (GQA)**:
+
 - We maintain multiple **query heads**
 - But use fewer **key/value heads**
 - Key and value projections are shared across groups of query heads
 
 Formally:
-- Let `n_heads` be the number of query heads
-- Let `n_kv_heads` be the number of key/value heads
-- We enforce:  
-  `n_heads % n_kv_heads == 0`
-- Each KV head is shared across `n_heads / n_kv_heads` query heads
+
+- Let `num_q_heads` be the number of query heads  
+- Let `num_kv_heads` be the number of key/value heads  
+- We enforce: num_q_heads % num_kv_heads == 0
+
+
+Each KV head is shared across `num_q_heads / num_kv_heads` query heads.
 
 ### Why use GQA?
 
 - Reduces memory and computation compared to full multi-head attention
-- Keeps expressive query diversity
-- Often retains similar performance with improved efficiency
+- Maintains expressive query diversity
+- Often retains strong performance with improved efficiency
 
 In this branch, we implement GQA inside a transformer and evaluate its performance on synthetic in-context learning tasks.
 
 ---
 
-## 3. Repository Structure (This Branch)
+## 3. Experimental Framework
 
-```
-src/
-  gqa_experiments.ipynb    
-  results/
-    gqa/
-```
+We follow the synthetic linear regression in-context learning setup from Oswald et al. (2023).
 
-The notebook contains:
-1. GQA attention implementation
-2. Transformer architecture
-3. Synthetic task generation
-4. Training loop
-5. Evaluation (MSE)
-6. Visualization of learning curves
+### Task Setup
 
-Results:
+- Input dimension: `d = 20`
+- Number of in-context examples: `n = 2d + 1 = 41`
+- Noise level: `σ = 0.1`
+- Batch size: `64`
 
-For each layer configuration (e.g., 1, 2, 4 layers), the notebook saves:
+Each task consists of:
 
-### Per-layer evaluation files
-- `eval_layers_1.csv`
-- `eval_layers_2.csv`
-- `eval_layers_4.csv`
-
-Each CSV contains:
-- `step`
-- `mse_gqa_mean`, `mse_gqa_std`
-- `mse_lsa_mean`, `mse_lsa_std`
-- `mse_gd_mean`, `mse_gd_std`
-- cosine similarity statistics
-- and other logged metrics
-
-### Summary file
-- `summary.json`
-
-This file aggregates the final evaluation statistics for each layer depth and stores:
-- Final mean and standard deviation of MSE for GQA
-- Final mean and standard deviation of MSE for LSA (oracle)
-- Final mean and standard deviation of MSE for GD baseline
-- Cosine similarity statistics
-- Training loss history
+- `n` in-context (x, y) pairs
+- A new query input `x_q`
+- The model must predict the corresponding `y_q`
 
 ---
 
-## 4. Reproducibility Instructions
+## 4. Metrics
 
-### Step 1: Clone the repository
+At evaluation checkpoints, we compute:
+
+- **MSE (GQA)**  
+Mean squared error of the GQA transformer on new tasks.
+
+- **MSE (GD baseline)**  
+Mean squared error of true gradient descent applied to the same tasks.
+
+- **MSE**  
+Error using the ground-truth regression weights.
+
+- **Cosine similarity (GQA vs GD)**  
+Measures how closely the GQA model’s predictions align with gradient descent predictions.
+
+Cosine similarity interpretation:
+
+- ~0 → unrelated behavior  
+- ~0.3–0.5 → partially aligned  
+- ~1.0 → strongly GD-like  
+
+---
+
+## 5. Experiment 1 — Training Steps Sweep
+
+### Objective
+
+Test whether GQA learns gradient descent–like behavior with increasing training.
+
+> **x = training steps (0 → 100k)**
+
+### Fixed Architecture
+
+- `num_layers = 8`
+- `num_q_heads = 4`
+- `num_kv_heads = 1`
+- Hidden dimension = 64
+
+### Procedure
+
+The model is trained for 100,000 steps.
+
+At checkpoints (0, 1k, 5k, 10k, 25k, 50k, 75k, 100k), we evaluate:
+
+- MSE (GQA)
+- MSE (GD baseline)
+- MSE (Oracle)
+- Cosine similarity between GQA and GD predictions
+
+### Results Summary
+
+We observe:
+
+- GQA initially underperforms GD.
+- With training, GQA surpasses GD in task MSE.
+- Cosine similarity increases from ~0 at initialization to ~0.4 by 100k steps.
+
+This indicates that GQA:
+
+- Successfully learns the regression task.
+- Partially approximates gradient descent behavior.
+- Does not converge to a strict GD emulator (cosine ≪ 1).
+
+---
+
+## 6. Repository Structure
+
+
+dhanvi/
+│
+└───src                    
+│    │ 
+│    └───data                      
+│    │      └───linear_regression.py # Synthetic regression task generation
+│    │ 
+│    └───models                     
+│    │      └───gqa.py # GQA transformer implementation
+│    │ 
+│    └───evaluation                 
+│    │      └───gd_baseline.py # Gradient descent baseline + cosine metric
+│    │ 
+│    │ 
+└───scripts              
+│    │ 
+│    └─── train_gqa_steps.py # Experiment 1: Training steps sweep                  
+│    └─── plot_gqa_steps.py # Plotting for Experiment 1
+│    │ 
+└─── results 
+│    └─── gqa_steps/ # Saved metrics + figures
+│    
+└───README.md
+    
+---
+
+## 7. Reproducing Experiment 1 - 100k train steps 
+
+### Step 1 — Clone the repository
+
 ```bash
 git clone https://github.com/Shou-Yue/Incontext-Learning-of-Attention-Mechanisms.git
 cd Incontext-Learning-of-Attention-Mechanisms
 git checkout dhanvi
 ```
 
-### Step 2: Install dependencies
-If using a shared team environment, activate that.
+### Step 2 — Install dependencies 
 
-Otherwise:
 ```bash
-pip install torch numpy pandas matplotlib jupyter
+pip install torch numpy matplotlib
 ```
 
-### Step 3: Run the notebook
+### Step 3 — Run training
+
 ```bash
-jupyter notebook src/gqa_experiments.ipynb
+python -m scripts.train_gqa_steps
 ```
+
+saves metrics ro results/gqa_steps/metrics_steps.npz
+
+### Step 4 - Generate plots 
+
+```bash
+python -m scripts.plot_gqa_steps
+```
+
