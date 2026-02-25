@@ -121,7 +121,7 @@ At checkpoints (0, 1k, 5k, 10k, 25k, 50k, 75k, 100k), we evaluate:
 
 - MSE (GQA)
 - MSE (GD baseline)
-- MSE (Oracle)
+- MSE 
 - Cosine similarity between GQA and GD predictions
 
 ### Results Summary
@@ -142,7 +142,7 @@ This indicates that GQA:
 
 ## 6. Repository Structure
 
-
+```
 dhanvi/
 │
 └───src                    
@@ -166,7 +166,7 @@ dhanvi/
 │    └─── gqa_steps/ # Saved metrics + figures
 │    
 └───README.md
-    
+ ```  
 ---
 
 ## 7. Reproducing Experiment 1 - 100k train steps 
