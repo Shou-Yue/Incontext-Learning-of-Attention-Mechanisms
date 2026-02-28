@@ -68,7 +68,7 @@ class Transformer(hk.Module):
       vocab_init: float = 0.01,
       return_logits: bool = False,
       include_query: bool = False,
-      use_gla: bool = True,   # <-- NEW FLAG
+      use_gla: bool = True,
       name: Optional[str] = None,
   ):
     super().__init__(name=name)

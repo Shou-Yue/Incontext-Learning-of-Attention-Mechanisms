@@ -1,5 +1,5 @@
 # =======================
-# src/attn.py (UPDATED: GLA now returns an attention map)
+# src/attn.py (UPDATED: GLA is causal + VALUE-gated + returns an attention map)
 # =======================
 
 import math
@@ -154,14 +154,22 @@ class MultiHeadAttention(hk.Module):
 
 
 # -----------------------
-# Gated Linear Attention
+# Gated Linear Attention (CAUSAL + VALUE-GATED)
 # -----------------------
 
 class GatedLinearAttention(hk.Module):
-  """Feature-map linear attention + a multiplicative gate.
+  """Causal feature-map linear attention with multiplicative VALUE gate.
 
-  Returns an 'effective attention' map for visualization:
-    att_map[..., h, tq, tk] = soft row-normalized phi(q_t)^T phi(k_s)
+  Output (causal linear attention):
+    kf = phi(k), qf = phi(q)
+    gate_t = sigmoid(W_g x_t) in R^{H*V} (computed from value input)
+    v_t' = v_t * (2 * gate_t)  # init multiplier ~= 1
+    Kcum_t  = Σ_{i<=t} kf_i
+    KVcum_t = Σ_{i<=t} kf_i ⊗ v_i'
+    out_t = (qf_t @ KVcum_t) / (qf_t · Kcum_t + eps)
+
+  Also returns a visualization attention map:
+    att_map[..., h, t, s] ∝ qf[...,t,h,:] · kf[...,s,h,:] for s<=t, row-normalized.
   """
 
   def __init__(
@@ -209,53 +217,65 @@ class GatedLinearAttention(hk.Module):
       query: jnp.ndarray,
       key: jnp.ndarray,
       value: jnp.ndarray,
-      mask: Optional[jnp.ndarray] = None,  # ignored (non-causal here)
+      mask: Optional[jnp.ndarray] = None,  # not used for computation; causal is enforced structurally
   ):
     # projections
     q = self._proj(query, self.key_size, "query")          # [..., Tq, H, K]
     k = self._proj(key,   self.key_size, "key")            # [..., Tk, H, K]
     v = self._proj(value, self.value_size, "value")        # [..., Tk, H, V]
 
+    *ld, Tq, _ = query.shape
+    *ld2, Tk, _ = key.shape
+
+    if Tq < Tk:
+      raise ValueError(f"GLA causal self-attn expects Tq >= Tk, got Tq={Tq}, Tk={Tk}")
+
     # feature map
     qf = self._phi(q)                                      # [..., Tq, H, K]
     kf = self._phi(k)                                      # [..., Tk, H, K]
 
-    # ----- effective attention map for visualization -----
-    # scores: [..., H, Tq, Tk]
-    scores = jnp.einsum("...thk,...shk->...hts", qf, kf)
-    # row-normalize over keys (Tk)
-    att_map = scores / (jnp.sum(scores, axis=-1, keepdims=True) + 1e-6)
-
-    # ----- linear attention output -----
-    # S = Σ_t kf_t ⊗ v_t  => [..., H, K, V]
-    S = jnp.einsum("...thk,...thv->...hkv", kf, v)
-
-    # denom = qf · Σ_t kf_t  => [..., Tq, H]
-    k_sum = jnp.sum(kf, axis=-3)  # [..., H, K]
-    denom = jnp.einsum("...thk,...hk->...th", qf, k_sum) + 1e-6
-
-    # out = (qf @ S) / denom  => [..., Tq, H, V]
-    out = jnp.einsum("...thk,...hkv->...thv", qf, S) / denom[..., None]
-
-    # Gate MUST be computed from query (Tq), not value (Tk)
+    # ----- VALUE gating (computed from 'value' input, i.e. tokens at key positions) -----
     gate = hk.Linear(
         self.num_heads * self.value_size,
         with_bias=True,
         w_init=hk.initializers.Constant(0.0),
         b_init=hk.initializers.Constant(0.0),
         name="gla_gate",
-    )(query)
+    )(value)                                               # [..., Tk, H*V]
+    gate = gate.reshape((*ld2, Tk, self.num_heads, self.value_size))
+    gate = jax.nn.sigmoid(gate)                            # init ~0.5
+    v = v * (2.0 * gate)                                   # init multiplier ~1
 
-    *ld, Tq, _ = query.shape
-    gate = gate.reshape((*ld, Tq, self.num_heads, self.value_size))
-    gate = jax.nn.sigmoid(gate)  # ~0.5 at init
+    # ----- effective attention map for visualization (O(T^2), causal-triangular) -----
+    # scores: [..., H, Tq, Tk]
+    scores = jnp.einsum("...thk,...shk->...hts", qf, kf)    # dot in feature space
+    # apply causal mask by zeroing future keys (supports rectangular Tq x Tk)
+    causal = (jnp.arange(Tk)[None, :] <= jnp.arange(Tq)[:, None]).astype(scores.dtype)  # [Tq, Tk]
+    scores = scores * causal[None, None, :, :]
+    att_map = scores / (jnp.sum(scores, axis=-1, keepdims=True) + 1e-6)
 
-    # scale by 2 so effective initial multiplier ≈ 1
-    out = out * (2.0 * gate)
+    # ----- causal linear attention via prefix sums (O(T)) -----
+    # KV term per key position: [..., Tk, H, K, V]
+    kv = jnp.einsum("...thk,...thv->...thkv", kf, v)
+    kv_cum = jnp.cumsum(kv, axis=-4)                       # cumulative over Tk
+    k_cum = jnp.cumsum(kf, axis=-3)                        # [..., Tk, H, K]
+
+    # gather prefix sums for each query position t using idx[t] = min(t, Tk-1)
+    idx = jnp.minimum(jnp.arange(Tq), Tk - 1)              # [Tq]
+    kv_sel = jnp.take(kv_cum, idx, axis=-4)                # [..., Tq, H, K, V]
+    k_sel = jnp.take(k_cum, idx, axis=-3)                  # [..., Tq, H, K]
+
+    # numerator: qf_t @ KVsel_t  => [..., Tq, H, V]
+    numer = jnp.einsum("...thk,...thkv->...thv", qf, kv_sel)
+
+    # denom: qf_t · Ksel_t       => [..., Tq, H]
+    denom = jnp.einsum("...thk,...thk->...th", qf, k_sel) + 1e-6
+
+    out = numer / denom[..., None]                         # [..., Tq, H, V]
 
     # merge heads
-    *ld, Tq2, H, D = out.shape
-    out = out.reshape((*ld, Tq2, H * D))
+    *ld3, T, H, D = out.shape
+    out = out.reshape((*ld3, T, H * D))
 
     # output projection name matches MHA downstream expectations
     out = hk.Linear(
