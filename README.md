@@ -1,4 +1,4 @@
-# Constructed Token GLA Notebook (JAX/Haiku)
+# Constructed Token GLA Notebook
 
 ## From Linear Attention to Gated Linear Attention (GLA)
 
