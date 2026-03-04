@@ -22,6 +22,9 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from src.models.lsa import MultiLayerLSA
 from src.models.attention_variants import MultiLayerAttentionModel
+from src.models.gla import MultiLayerGLA
+from src.models.gqa import GQATransformer
+from src.models.sparse_causal import SparseICLModel
 from src.evaluation.gd_baseline import (
     generate_linear_regression_task,
     gd_t_steps,
@@ -30,7 +33,7 @@ from src.evaluation.gd_baseline import (
 
 
 def train_model(model, d, n_points, num_tasks=10000, batch_size=64,
-                num_epochs=10, lr=1e-3, sigma=0.0, device='cpu'):
+                num_epochs=10, lr=1e-3, sigma=0.0, device='cpu', use_amp=False):
     """
     Train attention model on linear regression tasks.
     
@@ -52,6 +55,7 @@ def train_model(model, d, n_points, num_tasks=10000, batch_size=64,
     model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = nn.MSELoss()
+    scaler = torch.cuda.amp.GradScaler(enabled=(use_amp and device.type == "cuda"))
     
     train_losses = []
     num_batches = num_tasks // batch_size
@@ -80,16 +84,20 @@ def train_model(model, d, n_points, num_tasks=10000, batch_size=64,
             
             # Forward pass
             optimizer.zero_grad()
-            y_pred = model(xs, ys, query_x)
-            loss = criterion(y_pred, query_y)
+            with torch.cuda.amp.autocast(enabled=(use_amp and device.type == "cuda")):
+                y_pred = model(xs, ys, query_x)
+                loss = criterion(y_pred, query_y)
             
             # Backward pass
-            loss.backward()
+            scaler.scale(loss).backward()
             
             # Gradient clipping for stability
+            if use_amp and device.type == "cuda":
+                scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             
-            optimizer.step()
+            scaler.step(optimizer)
+            scaler.update()
             
             epoch_losses.append(loss.item())
             pbar.set_postfix({'loss': f'{loss.item():.6f}'})
@@ -169,7 +177,7 @@ def main():
                         help='List of num_layers to experiment with')
     parser.add_argument('--hidden_dim', type=int, default=None,
                         help='Hidden dimension for LSA (default: d)')
-    parser.add_argument('--num_train_tasks', type=int, default=10000,
+    parser.add_argument('--num_train_tasks', type=int, default=64000,
                         help='Number of training tasks')
     parser.add_argument('--num_eval_tasks', type=int, default=1000,
                         help='Number of evaluation tasks')
@@ -187,9 +195,13 @@ def main():
                         help='Output directory for results')
     parser.add_argument('--device', type=str, default='auto',
                         help='Device to use (auto, cpu, cuda)')
+    parser.add_argument('--use_amp', action='store_true',
+                        help='Use mixed precision (AMP) on CUDA')
+    parser.add_argument('--compile', action='store_true',
+                        help='Use torch.compile on models (PyTorch 2.x)')
     parser.add_argument('--model_types', type=str, nargs='+',
-                        default=['lsa', 'softmax', 'linformer', 'kernel'],
-                        help='Model types to run: lsa, softmax, linformer, kernel')
+                        default=['lsa', 'softmax', 'linformer', 'kernel', 'gla', 'gqa', 'sparse'],
+                        help='Model types to run: lsa, softmax, linformer, kernel, gla, gqa, sparse')
     parser.add_argument('--lowrank_k_ratio', type=float, default=0.5,
                         help='Single low-rank ratio (backward compatible). Ignored if --lowrank_k_ratios is set.')
     parser.add_argument('--lowrank_k_ratios', type=float, nargs='+', default=None,
@@ -206,6 +218,20 @@ def main():
                         help='For ratio=1.0, force exact softmax equivalence in low-rank path')
     parser.add_argument('--lowrank_block_size', type=int, default=2,
                         help='Use blockwise low-rank projection with this block size (0 disables)')
+    parser.add_argument('--gqa_num_q_heads', type=int, default=4)
+    parser.add_argument('--gqa_num_kv_heads', type=int, default=2)
+    parser.add_argument('--gla_disable_gate', action='store_true',
+                        help='Disable GLA value gate (use raw V).')
+    parser.add_argument('--gla_gate_bias', type=float, default=0.0,
+                        help='Bias for GLA gate (sigmoid). Positive keeps gate open.')
+    parser.add_argument('--gla_hidden_mult', type=float, default=None,
+                        help='If set and hidden_dim is None, use hidden_dim = mult * d for GLA.')
+    parser.add_argument('--sparse_n_head', type=int, default=4)
+    parser.add_argument('--sparse_window_size', type=int, default=None,
+                        help='If None, set to cover all tokens for the current n_points.')
+    parser.add_argument('--sparse_stride', type=int, default=0)
+    parser.add_argument('--sparse_global_tokens', type=int, default=None,
+                        help='If None, set to cover all tokens for the current n_points.')
     
     args = parser.parse_args()
     
@@ -214,6 +240,18 @@ def main():
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     else:
         device = torch.device(args.device)
+
+    if args.compile and device.type == "cuda":
+        major, minor = torch.cuda.get_device_capability()
+        if (major, minor) < (7, 0):
+            print(f"[warn] torch.compile disabled: GPU capability {major}.{minor} < 7.0")
+            args.compile = False
+        else:
+            try:
+                import torch._dynamo as dynamo
+                dynamo.config.suppress_errors = True
+            except Exception:
+                pass
     
     print(f"Using device: {device}")
     
@@ -245,6 +283,12 @@ def main():
 
         def train_and_store(model, name):
             print(f"\nModel ({name}) parameters: {sum(p.numel() for p in model.parameters()):,}")
+            if args.compile:
+                try:
+                    model = torch.compile(model)
+                    print("Compiled model with torch.compile")
+                except Exception as e:
+                    print(f"[warn] torch.compile failed: {e}")
             trained_model, train_losses = train_model(
                 model=model,
                 d=args.d,
@@ -254,7 +298,8 @@ def main():
                 num_epochs=args.num_epochs,
                 lr=args.lr,
                 sigma=args.sigma,
-                device=device
+                device=device,
+                use_amp=args.use_amp
             )
             models[name] = trained_model
             train_losses_by_model[name] = train_losses
@@ -278,6 +323,45 @@ def main():
                     hidden_dim=args.hidden_dim
                 )
                 train_and_store(model, 'lsa')
+            elif model_type == 'gla':
+                gla_hidden = args.hidden_dim
+                if gla_hidden is None and args.gla_hidden_mult is not None:
+                    gla_hidden = int(args.gla_hidden_mult * args.d)
+                model = MultiLayerGLA(
+                    d=args.d,
+                    num_layers=num_layers,
+                    hidden_dim=gla_hidden,
+                    disable_gate=args.gla_disable_gate,
+                    gate_bias=args.gla_gate_bias,
+                )
+                train_and_store(model, 'gla')
+            elif model_type == 'gqa':
+                model = GQATransformer(
+                    d=args.d,
+                    num_layers=num_layers,
+                    hidden_dim=args.hidden_dim if args.hidden_dim is not None else args.d,
+                    num_q_heads=args.gqa_num_q_heads,
+                    num_kv_heads=args.gqa_num_kv_heads,
+                )
+                train_and_store(model, 'gqa')
+            elif model_type == 'sparse':
+                sparse_window = args.sparse_window_size
+                if sparse_window is None:
+                    sparse_window = 2 * n_points + 2
+                sparse_global = args.sparse_global_tokens
+                if sparse_global is None:
+                    sparse_global = 2 * n_points + 2
+                model = SparseICLModel(
+                    d=args.d,
+                    n_points=n_points,
+                    num_layers=num_layers,
+                    hidden_dim=args.hidden_dim if args.hidden_dim is not None else args.d,
+                    n_head=args.sparse_n_head,
+                    window_size=sparse_window,
+                    stride=args.sparse_stride,
+                    global_tokens=sparse_global,
+                )
+                train_and_store(model, 'sparse')
             elif model_type == 'softmax':
                 model = MultiLayerAttentionModel(
                     d=args.d,

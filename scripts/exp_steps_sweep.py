@@ -20,6 +20,9 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from src.models.lsa import MultiLayerLSA
 from src.models.attention_variants import MultiLayerAttentionModel
+from src.models.gla import MultiLayerGLA
+from src.models.gqa import GQATransformer
+from src.models.sparse_causal import SparseICLModel
 from src.evaluation.gd_baseline import (
     generate_linear_regression_task,
     gd_t_steps,
@@ -93,6 +96,42 @@ def build_models(args, n_points, num_layers, device):
     models = {}
     if 'lsa' in args.model_types:
         models['lsa'] = MultiLayerLSA(d=args.d, num_layers=num_layers, hidden_dim=args.hidden_dim)
+    if 'gla' in args.model_types:
+        gla_hidden = args.hidden_dim
+        if gla_hidden is None and args.gla_hidden_mult is not None:
+            gla_hidden = int(args.gla_hidden_mult * args.d)
+        models['gla'] = MultiLayerGLA(
+            d=args.d,
+            num_layers=num_layers,
+            hidden_dim=gla_hidden,
+            disable_gate=args.gla_disable_gate,
+            gate_bias=args.gla_gate_bias,
+        )
+    if 'gqa' in args.model_types:
+        models['gqa'] = GQATransformer(
+            d=args.d,
+            num_layers=num_layers,
+            hidden_dim=args.hidden_dim if args.hidden_dim is not None else args.d,
+            num_q_heads=args.gqa_num_q_heads,
+            num_kv_heads=args.gqa_num_kv_heads,
+        )
+    if 'sparse' in args.model_types:
+        sparse_window = args.sparse_window_size
+        if sparse_window is None:
+            sparse_window = 2 * n_points + 2
+        sparse_global = args.sparse_global_tokens
+        if sparse_global is None:
+            sparse_global = 2 * n_points + 2
+        models['sparse'] = SparseICLModel(
+            d=args.d,
+            n_points=n_points,
+            num_layers=num_layers,
+            hidden_dim=args.hidden_dim if args.hidden_dim is not None else args.d,
+            n_head=args.sparse_n_head,
+            window_size=sparse_window,
+            stride=args.sparse_stride,
+            global_tokens=sparse_global,
+        )
     if 'softmax' in args.model_types:
         models['softmax'] = MultiLayerAttentionModel(
             d=args.d,
@@ -153,13 +192,14 @@ def build_models(args, n_points, num_layers, device):
 
 
 def run_steps_sweep(models, steps_list, d, n_points, batch_size, lr, sigma,
-                    num_eval_tasks, eta, device):
+                    num_eval_tasks, eta, device, use_amp=False):
     steps_list = sorted(set(int(s) for s in steps_list))
     max_steps = max(steps_list)
     steps_set = set(steps_list)
 
     optimizers = {name: torch.optim.Adam(m.parameters(), lr=lr) for name, m in models.items()}
     criterion = nn.MSELoss()
+    scaler = torch.cuda.amp.GradScaler(enabled=(use_amp and device.type == "cuda"))
 
     all_results = []
 
@@ -192,11 +232,15 @@ def run_steps_sweep(models, steps_list, d, n_points, batch_size, lr, sigma,
 
         for name, model in models.items():
             optimizers[name].zero_grad()
-            y_pred = model(xs, ys, query_x)
-            loss = criterion(y_pred, query_y)
-            loss.backward()
+            with torch.cuda.amp.autocast(enabled=(use_amp and device.type == "cuda")):
+                y_pred = model(xs, ys, query_x)
+                loss = criterion(y_pred, query_y)
+            scaler.scale(loss).backward()
+            if use_amp and device.type == "cuda":
+                scaler.unscale_(optimizers[name])
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            optimizers[name].step()
+            scaler.step(optimizers[name])
+            scaler.update()
 
         current_step += 1
         pbar.update(1)
@@ -236,13 +280,17 @@ def main():
     parser.add_argument('--num_eval_tasks', type=int, default=1000)
     parser.add_argument('--output_dir', type=str, default='./results/exp_steps_sweep')
     parser.add_argument('--device', type=str, default='auto')
+    parser.add_argument('--use_amp', action='store_true',
+                        help='Use mixed precision (AMP) on CUDA')
+    parser.add_argument('--compile', action='store_true',
+                        help='Use torch.compile on models (PyTorch 2.x)')
 
     parser.add_argument('--model_types', type=str, nargs='+',
-                        default=['lsa', 'softmax', 'linformer', 'kernel'],
+                        default=['lsa', 'softmax', 'linformer', 'kernel', 'gla', 'gqa', 'sparse'],
                         help='Model types to run: lsa, softmax, linformer, kernel')
     parser.add_argument('--lowrank_k_ratio', type=float, default=0.5,
                         help='Single low-rank ratio (backward compatible). Ignored if --lowrank_k_ratios is set.')
-    parser.add_argument('--lowrank_k_ratios', type=float, nargs='+', default=[1.0, 0.75, 0.5],
+    parser.add_argument('--lowrank_k_ratios', type=float, nargs='+', default=[0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
                         help='List of low-rank ratios relative to block size or n_tokens')
     parser.add_argument('--lowrank_share_ef', action='store_true')
     parser.add_argument('--lowrank_orth_init', action='store_true')
@@ -250,6 +298,20 @@ def main():
     parser.add_argument('--lowrank_freeze_proj', action='store_true')
     parser.add_argument('--lowrank_exact_match', action='store_true')
     parser.add_argument('--lowrank_block_size', type=int, default=2)
+    parser.add_argument('--gqa_num_q_heads', type=int, default=4)
+    parser.add_argument('--gqa_num_kv_heads', type=int, default=2)
+    parser.add_argument('--gla_disable_gate', action='store_true',
+                        help='Disable GLA value gate (use raw V).')
+    parser.add_argument('--gla_gate_bias', type=float, default=0.0,
+                        help='Bias for GLA gate (sigmoid). Positive keeps gate open.')
+    parser.add_argument('--gla_hidden_mult', type=float, default=None,
+                        help='If set and hidden_dim is None, use hidden_dim = mult * d for GLA.')
+    parser.add_argument('--sparse_n_head', type=int, default=4)
+    parser.add_argument('--sparse_window_size', type=int, default=None,
+                        help='If None, set to cover all tokens for the current n_points.')
+    parser.add_argument('--sparse_stride', type=int, default=0)
+    parser.add_argument('--sparse_global_tokens', type=int, default=None,
+                        help='If None, set to cover all tokens for the current n_points.')
 
     args = parser.parse_args()
 
@@ -258,10 +320,28 @@ def main():
     else:
         device = torch.device(args.device)
 
+    if args.compile and device.type == "cuda":
+        major, minor = torch.cuda.get_device_capability()
+        if (major, minor) < (7, 0):
+            print(f"[warn] torch.compile disabled: GPU capability {major}.{minor} < 7.0")
+            args.compile = False
+        else:
+            try:
+                import torch._dynamo as dynamo
+                dynamo.config.suppress_errors = True
+            except Exception:
+                pass
+
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     models = build_models(args, args.n_points, args.num_layers, device)
+    if args.compile:
+        try:
+            models = {k: torch.compile(v) for k, v in models.items()}
+            print("Compiled models with torch.compile")
+        except Exception as e:
+            print(f"[warn] torch.compile failed: {e}")
 
     # Train to max steps, evaluate at checkpoints
     all_results = run_steps_sweep(
@@ -274,15 +354,18 @@ def main():
         sigma=args.sigma,
         num_eval_tasks=args.num_eval_tasks,
         eta=args.eta,
-        device=device
+        device=device,
+        use_amp=args.use_amp
     )
 
     all_results = sorted(all_results, key=lambda r: r.get('train_steps', 0))
     for res in all_results:
         step = res['train_steps']
+        output_dir.mkdir(parents=True, exist_ok=True)
         with open(output_dir / f"results_steps_{step}.json", 'w') as f:
             json.dump(res, f, indent=2)
 
+    output_dir.mkdir(parents=True, exist_ok=True)
     with open(output_dir / "all_results.json", 'w') as f:
         json.dump(all_results, f, indent=2)
 

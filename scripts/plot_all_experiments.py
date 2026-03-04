@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Plot all three experiments:
+Plot all four experiments:
   - training steps sweep
   - layer sweep
-  - in-context sweep
+  - in-context sweep (trained)
+  - in-context sweep (zero training)
 
-Produces 6 graphs: MSE + cosine for each experiment.
+Produces 8 graphs: MSE + cosine for each experiment.
 """
 import json
 import argparse
@@ -30,6 +31,12 @@ def _label(method):
         return "Softmax"
     if method == "kernel":
         return "Kernelized Linear"
+    if method == "gla":
+        return "GLA"
+    if method == "gqa":
+        return "GQA"
+    if method == "sparse":
+        return "Sparse Causal"
     if method.startswith("lowrank_"):
         return method.replace("lowrank_", "Low-rank ")
     return method
@@ -53,6 +60,9 @@ def _plot_experiment(results, x_key, x_label, out_prefix):
         "lsa": "#4472C4",
         "softmax": "#5B9BD5",
         "kernel": "#70AD47",
+        "gla": "#9E480E",
+        "gqa": "#8064A2",
+        "sparse": "#2E75B6",
     }
     markers = ['o', '^', 'D', 'v', 'P', 'X', '*']
 
@@ -120,12 +130,12 @@ def main():
     parser.add_argument('--layers_results', type=str,
                         default='results/exp_all/exp_layers_sweep/all_results.json',
                         help='Path to layers sweep all_results.json')
-    parser.add_argument('--layers_zero_results', type=str,
-                        default='results/exp_all/exp_layers_sweep_zero/all_results.json',
-                        help='Path to zero-train layers sweep all_results.json')
     parser.add_argument('--context_results', type=str,
                         default='results/exp_all/exp_context_sweep/all_results.json',
                         help='Path to context sweep all_results.json')
+    parser.add_argument('--context_zero_results', type=str,
+                        default='results/exp_all/exp_context_sweep_zero/all_results.json',
+                        help='Path to zero-train context sweep all_results.json')
     parser.add_argument('--output_dir', type=str, required=True)
     args = parser.parse_args()
 
@@ -134,8 +144,8 @@ def main():
 
     steps_results = _load_if_exists(args.steps_results)
     layers_results = _load_if_exists(args.layers_results)
-    layers_zero_results = _load_if_exists(args.layers_zero_results)
     context_results = _load_if_exists(args.context_results)
+    context_zero_results = _load_if_exists(args.context_zero_results)
 
     if steps_results is not None:
         _plot_experiment(
@@ -151,19 +161,19 @@ def main():
             x_label="Number of Layers / GD Steps",
             out_prefix=str(output_dir / "layers")
         )
-    if layers_zero_results is not None:
-        _plot_experiment(
-            layers_zero_results,
-            x_key="num_layers",
-            x_label="Number of Layers / GD Steps (0 training)",
-            out_prefix=str(output_dir / "layers_zero")
-        )
     if context_results is not None:
         _plot_experiment(
             context_results,
             x_key="n_points",
             x_label="In-context Examples (n)",
             out_prefix=str(output_dir / "context")
+        )
+    if context_zero_results is not None:
+        _plot_experiment(
+            context_zero_results,
+            x_key="n_points",
+            x_label="In-context Examples (n) (0 training)",
+            out_prefix=str(output_dir / "context_zero")
         )
 
     print(f"Saved plots to: {output_dir}")

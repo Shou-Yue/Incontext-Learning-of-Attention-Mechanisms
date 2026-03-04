@@ -19,6 +19,9 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from src.models.lsa import MultiLayerLSA
 from src.models.attention_variants import MultiLayerAttentionModel
+from src.models.gla import MultiLayerGLA
+from src.models.gqa import GQATransformer
+from src.models.sparse_causal import SparseICLModel
 from src.evaluation.gd_baseline import (
     generate_linear_regression_task,
     gd_t_steps,
@@ -91,6 +94,42 @@ def build_models(args, n_points, num_layers, device):
     models = {}
     if 'lsa' in args.model_types:
         models['lsa'] = MultiLayerLSA(d=args.d, num_layers=num_layers, hidden_dim=args.hidden_dim)
+    if 'gla' in args.model_types:
+        gla_hidden = args.hidden_dim
+        if gla_hidden is None and args.gla_hidden_mult is not None:
+            gla_hidden = int(args.gla_hidden_mult * args.d)
+        models['gla'] = MultiLayerGLA(
+            d=args.d,
+            num_layers=num_layers,
+            hidden_dim=gla_hidden,
+            disable_gate=args.gla_disable_gate,
+            gate_bias=args.gla_gate_bias,
+        )
+    if 'gqa' in args.model_types:
+        models['gqa'] = GQATransformer(
+            d=args.d,
+            num_layers=num_layers,
+            hidden_dim=args.hidden_dim if args.hidden_dim is not None else args.d,
+            num_q_heads=args.gqa_num_q_heads,
+            num_kv_heads=args.gqa_num_kv_heads,
+        )
+    if 'sparse' in args.model_types:
+        sparse_window = args.sparse_window_size
+        if sparse_window is None:
+            sparse_window = 2 * n_points + 2
+        sparse_global = args.sparse_global_tokens
+        if sparse_global is None:
+            sparse_global = 2 * n_points + 2
+        models['sparse'] = SparseICLModel(
+            d=args.d,
+            n_points=n_points,
+            num_layers=num_layers,
+            hidden_dim=args.hidden_dim if args.hidden_dim is not None else args.d,
+            n_head=args.sparse_n_head,
+            window_size=sparse_window,
+            stride=args.sparse_stride,
+            global_tokens=sparse_global,
+        )
     if 'softmax' in args.model_types:
         models['softmax'] = MultiLayerAttentionModel(
             d=args.d,
@@ -164,16 +203,30 @@ def main():
     parser.add_argument('--device', type=str, default='auto')
 
     parser.add_argument('--model_types', type=str, nargs='+',
-                        default=['lsa', 'softmax', 'linformer', 'kernel'])
+                        default=['lsa', 'softmax', 'linformer', 'kernel', 'gla', 'gqa', 'sparse'])
     parser.add_argument('--lowrank_k_ratio', type=float, default=0.5,
                         help='Single low-rank ratio (backward compatible). Ignored if --lowrank_k_ratios is set.')
-    parser.add_argument('--lowrank_k_ratios', type=float, nargs='+', default=[1.0, 0.75, 0.5])
+    parser.add_argument('--lowrank_k_ratios', type=float, nargs='+', default=[0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
     parser.add_argument('--lowrank_share_ef', action='store_true')
     parser.add_argument('--lowrank_orth_init', action='store_true')
     parser.add_argument('--lowrank_identity_proj', action='store_true')
     parser.add_argument('--lowrank_freeze_proj', action='store_true')
     parser.add_argument('--lowrank_exact_match', action='store_true')
     parser.add_argument('--lowrank_block_size', type=int, default=2)
+    parser.add_argument('--gqa_num_q_heads', type=int, default=4)
+    parser.add_argument('--gqa_num_kv_heads', type=int, default=2)
+    parser.add_argument('--gla_disable_gate', action='store_true',
+                        help='Disable GLA value gate (use raw V).')
+    parser.add_argument('--gla_gate_bias', type=float, default=0.0,
+                        help='Bias for GLA gate (sigmoid). Positive keeps gate open.')
+    parser.add_argument('--gla_hidden_mult', type=float, default=None,
+                        help='If set and hidden_dim is None, use hidden_dim = mult * d for GLA.')
+    parser.add_argument('--sparse_n_head', type=int, default=4)
+    parser.add_argument('--sparse_window_size', type=int, default=None,
+                        help='If None, set to cover all tokens for the current n_points.')
+    parser.add_argument('--sparse_stride', type=int, default=0)
+    parser.add_argument('--sparse_global_tokens', type=int, default=None,
+                        help='If None, set to cover all tokens for the current n_points.')
 
     args = parser.parse_args()
 

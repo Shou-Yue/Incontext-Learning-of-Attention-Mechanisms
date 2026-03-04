@@ -1,0 +1,28 @@
+{
+  "mse_gd_mean": 14.379857109438989,
+  "mse_gd_std": 4.2479136373333,
+  "mse_softmax_mean": 21.032372874598348,
+  "mse_softmax_std": 6.075372169612908,
+  "cosine_sim_softmax_mean": 0.14327618191319128,
+  "cosine_sim_softmax_std": 0.03711541711768163,
+  "mse_lowrank_block2_k1_mean": 21.317235177563084,
+  "mse_lowrank_block2_k1_std": 6.278045170509587,
+  "cosine_sim_lowrank_block2_k1_mean": 0.009703752464584766,
+  "cosine_sim_lowrank_block2_k1_std": 0.03702287147341191,
+  "mse_lowrank_block2_k0.75_mean": 21.363816784274192,
+  "mse_lowrank_block2_k0.75_std": 6.276227863993889,
+  "cosine_sim_lowrank_block2_k0.75_mean": 0.0019474459151106497,
+  "cosine_sim_lowrank_block2_k0.75_std": 0.041839795785609646,
+  "mse_lowrank_block2_k0.5_mean": 21.25143764865014,
+  "mse_lowrank_block2_k0.5_std": 6.313955634463402,
+  "cosine_sim_lowrank_block2_k0.5_mean": 0.12951699205704273,
+  "cosine_sim_lowrank_block2_k0.5_std": 0.04393182407857389,
+  "num_layers": 2,
+  "proj_k_ratios": [
+    1.0,
+    0.75,
+    0.5
+  ],
+  "share_ef": false,
+  "orth_init": false
+}

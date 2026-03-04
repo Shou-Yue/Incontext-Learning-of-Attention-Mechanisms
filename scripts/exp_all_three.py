@@ -41,7 +41,7 @@ def main():
     # Layer sweep args
     parser.add_argument('--num_layers_list', type=int, nargs='+',
                         default=[2, 4, 8, 16, 32, 64])
-    parser.add_argument('--num_train_tasks', type=int, default=10000)
+    parser.add_argument('--num_train_tasks', type=int, default=64000)
     parser.add_argument('--num_epochs', type=int, default=10)
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--num_eval_tasks', type=int, default=1000)

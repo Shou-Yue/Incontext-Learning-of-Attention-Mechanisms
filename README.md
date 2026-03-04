@@ -85,6 +85,94 @@ Sanity check for low‑rank equivalence at full rank:
 python scripts/verify_lowrank_equivalence.py
 ```
 
+## Core Experiment Suite (4 Sweeps)
+
+These are the main experiments we use to compare attention mechanisms. Each sweep outputs:
+- `all_results.json` with MSE + cosine similarity vs GD
+- Two plots (MSE + cosine)
+
+### One‑command runner (recommended)
+This creates a timestamped directory for every run:
+`results/experiments_<HHMMSS_YYYYMMDD>/`
+```bash
+python scripts/run_all_experiments.py --device cuda
+```
+Each run writes its plots to:
+`results/experiments_<HHMMSS_YYYYMMDD>/plots/`
+
+### Individual sweeps (manual)
+You can still run the sweeps one‑by‑one. If you do, set `--output_dir` manually.
+
+### 1) Training‑Steps Sweep (learnability)
+Vary optimizer steps while holding layers and context length fixed.
+```bash
+python scripts/exp_steps_sweep.py \
+  --d 20 \
+  --n_points 41 \
+  --num_layers 8 \
+  --train_steps_list 0 1000 2000 5000 10000 20000 \
+  --output_dir results/exp_all/exp_steps_sweep
+```
+
+### 2) Layer Sweep (layers ≈ GD steps)
+Vary number of layers while holding training steps and context length fixed.
+```bash
+python scripts/lsa_gd_multilayer.py \
+  --d 20 \
+  --num_layers_list 2 4 8 16 32 64 \
+  --num_train_tasks 10000 \
+  --num_epochs 10 \
+  --output_dir results/exp_all/exp_layers_sweep
+```
+
+### 3) In‑Context Sweep (scaling with n)
+Vary number of in‑context examples while holding layers and training steps fixed.
+```bash
+python scripts/exp_context_sweep.py \
+  --d 20 \
+  --n_points_list 5 10 20 40 \
+  --num_layers 8 \
+  --train_steps 10000 \
+  --output_dir results/exp_all/exp_context_sweep
+```
+
+### 4) Zero‑Training Context Sweep (random init baseline)
+Context sweep with **0 training** to show random‑init behavior.
+```bash
+python scripts/exp_context_sweep_zero_train.py \
+  --d 20 \
+  --n_points_list 5 10 20 40 80 \
+  --num_layers 8 \
+  --output_dir results/exp_all/exp_context_sweep_zero
+```
+
+### Plotting all 8 graphs
+Plots are saved to the `plots/` folder you specify.
+```bash
+python scripts/plot_all_experiments.py \
+  --steps_results results/exp_all/exp_steps_sweep/all_results.json \
+  --layers_results results/exp_all/exp_layers_sweep/all_results.json \
+  --context_results results/exp_all/exp_context_sweep/all_results.json \
+  --context_zero_results results/exp_all/exp_context_sweep_zero/all_results.json \
+  --output_dir results/exp_all/plots
+```
+
+### Interactive plots
+Single‑experiment interactive plot with toggles:
+```bash
+python scripts/plot_interactive_experiment.py \
+  --results_file results/exp_all/exp_steps_sweep/all_results.json \
+  --metric mse
+```
+
+All‑experiments interactive plot (6 subplots for steps/layers/context):
+```bash
+python scripts/plot_interactive_all_experiments.py \
+  --steps_results results/exp_all/exp_steps_sweep/all_results.json \
+  --layers_results results/exp_all/exp_layers_sweep/all_results.json \
+  --context_results results/exp_all/exp_context_sweep/all_results.json
+```
+
 ## LSA (Linear Self‑Attention) Experiments
 
 Train and evaluate multi‑layer LSA models:
@@ -118,6 +206,8 @@ python scripts/interactive_plot.py results/all_methods_results.json
 Typical outputs are written under `results/` and `checkpoints/`:
 - Evaluation JSON files and plots from scripts.
 - Checkpoints and training logs from `src/training/train.py`.
+- Core suite results in `results/exp_all/` (four sweeps + plots) or in
+  `results/experiments_<HHMMSS_YYYYMMDD>/` when using `scripts/run_all_experiments.py`.
 
 ## Reproducibility
 
