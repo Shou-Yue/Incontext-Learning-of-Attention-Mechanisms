@@ -13,7 +13,7 @@ from src.models.gqa import GQATransformer
 def evaluate(model, d, n, noise_std, device, batch_size=256, gd_steps=50, gd_lr=0.1):
     model.eval()
 
-    # --- Generate eval batch (no grads needed for data) ---
+    # Generate eval batch 
     xs, ys, query_x, query_y, _ = generate_linear_regression_batch(
         batch_size=batch_size,
         d=d,
@@ -22,14 +22,14 @@ def evaluate(model, d, n, noise_std, device, batch_size=256, gd_steps=50, gd_lr=
         device=device,
     )
 
-    # --- Model predictions: we don't need grads for the model during eval ---
+    #  Model predictions
     with torch.no_grad():
         y_hat_model = model(xs, ys, query_x)  # [B]
 
-    # --- GD baseline: we DO need grads for w, so NO no_grad() here ---
+    # GD baseline: 
     y_hat_gd = gd_baseline_predict(xs, ys, query_x, gd_steps, gd_lr)
 
-    # Oracle is just the true y
+    # Oracle is true y
     y_hat_oracle = query_y
 
     mse_model = F.mse_loss(y_hat_model, query_y).item()
@@ -41,11 +41,10 @@ def evaluate(model, d, n, noise_std, device, batch_size=256, gd_steps=50, gd_lr=
     return mse_model, mse_gd, mse_oracle, cos_sim
 
 def main():
-    # ---- hyperparameters: match Oswald-ish single-layer experiment ----
     d = 20
     n = 41                    # 2d + 1
     noise_std = 0.1
-    num_layers = 8            # mid/high depth for this experiment
+    num_layers = 8           
     num_q_heads = 4
     num_kv_heads = 1          # GQA: 4 Q heads sharing 1 KV group
     d_model = 64
@@ -56,13 +55,12 @@ def main():
     batch_size = 64
     lr = 1e-4
 
-    # checkpoints for evaluation (we'll log at these steps)
     eval_steps = [0, 1000, 5000, 10_000, 25_000, 50_000, 75_000, 100_000]
 
     out_dir = "results/gqa_steps"
     os.makedirs(out_dir, exist_ok=True)
 
-    # ---- model + optimizer ----
+    # model + optimizer 
     model = GQATransformer(
         d=d,
         num_layers=num_layers,
@@ -73,14 +71,12 @@ def main():
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    # ---- containers for metrics ----
     steps_hist = []
     mse_model_hist = []
     mse_gd_hist = []
     mse_oracle_hist = []
     cos_hist = []
 
-    # eval at step 0 (untrained model)
     mse_m, mse_g, mse_o, cos = evaluate(model, d, n, noise_std, device)
     steps_hist.append(0)
     mse_model_hist.append(mse_m)
@@ -89,7 +85,6 @@ def main():
     cos_hist.append(cos)
     print(f"[step 0] mse_model={mse_m:.4f} mse_gd={mse_g:.4f} cos={cos:.4f}")
 
-    # ---- training loop ----
     for step in range(1, num_steps + 1):
         model.train()
 
@@ -122,7 +117,7 @@ def main():
                 f"mse_model={mse_m:.4f} mse_gd={mse_g:.4f} cos={cos:.4f}"
             )
 
-    # ---- save metrics ----
+    #save metrics 
     np.savez(
         os.path.join(out_dir, "metrics_steps.npz"),
         steps=np.array(steps_hist),

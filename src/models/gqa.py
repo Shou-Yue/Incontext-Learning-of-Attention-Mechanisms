@@ -60,8 +60,6 @@ class GroupedQueryAttentionBlock(nn.Module):
         Q = Q.view(B, N, self.num_q_heads, self.head_dim).permute(0, 2, 1, 3)
         K = K.view(B, N, self.num_kv_heads, self.head_dim).permute(0, 2, 1, 3)
         V = V.view(B, N, self.num_kv_heads, self.head_dim).permute(0, 2, 1, 3)
-        # Q: [B, q_heads, N, head_dim]
-        # K,V: [B, kv_heads, N, head_dim]
 
         group_size = self.num_q_heads // self.num_kv_heads
         K = K.repeat_interleave(group_size, dim=1)  # [B, q_heads, N, head_dim]

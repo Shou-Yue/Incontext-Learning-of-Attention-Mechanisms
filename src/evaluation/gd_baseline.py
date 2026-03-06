@@ -43,8 +43,6 @@ def gd_baseline_predict(
             w -= lr * grad
         w.requires_grad_(True)
 
-    # ---- final predictions on query_x ----
-    # query_x: [B, 1, d], treat "1" as n=1 in the "bnd" pattern
     with torch.no_grad():
         y_hat = torch.einsum("bnd,bd->bn", query_x, w)  # [B, 1]
         y_hat = y_hat[:, 0]  # [B]

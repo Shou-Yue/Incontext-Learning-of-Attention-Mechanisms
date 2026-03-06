@@ -17,7 +17,7 @@ def main():
 
     out_dir = os.path.dirname(metrics_path)
 
-    # ----- Figure 1: Loss vs training steps (similar to left panel) -----
+    # Figure 1: Loss vs training steps 
     plt.figure(figsize=(5, 3))
     plt.plot(steps, mse_gd, label="GD", linewidth=2)
     plt.plot(steps, mse_model, label="Trained TF (GQA)", linewidth=2)
@@ -27,9 +27,7 @@ def main():
     plt.tight_layout()
     plt.savefig(os.path.join(out_dir, "gqa_steps_loss.png"), dpi=300)
 
-    # ----- Figure 2: “diffs + cosine” vs steps (similar to right panel) -----
-    # For now we use absolute difference of MSEs as a proxy for “pred diff”.
-    # If you later want true L2 norm of prediction difference, we can log more.
+    # Figure 2: diffs + cosine vs steps 
     model_diff = np.abs(mse_model - mse_oracle)
     preds_diff = np.abs(mse_model - mse_gd)
 
