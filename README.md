@@ -185,18 +185,7 @@ Pull latest results and regenerate plots locally:
 ./pull-and-plot.sh latest auto --fresh
 ```
 
-## LSA (Linear Self‑Attention) Experiments
-
-Train and evaluate multi‑layer LSA models:
-```bash
-python scripts/lsa_gd_multilayer.py \
-  --d 20 \
-  --num_layers_list 1 2 4 8 16 32 \
-  --num_epochs 30 \
-  --device cuda
-```
-
-Legacy plotting utilities live under `scripts/legacy/`.
+Run experiments via `scripts/run_all_experiments.py` (or the `exp_*` sweep scripts), and generate plots with `scripts/plot_interactive_experiments.py`.
 
 ## Visualization
 
