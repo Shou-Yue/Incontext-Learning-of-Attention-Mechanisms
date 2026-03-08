@@ -1,9 +1,0 @@
-{
-  "mse_gd_mean": 6.022764348983765,
-  "mse_gd_std": 0.8842240834370627,
-  "mse_sparse_mean": 20.356161022186278,
-  "mse_sparse_std": 3.383767573328906,
-  "cosine_sim_sparse_mean": -0.016637519958021586,
-  "cosine_sim_sparse_std": 0.018627163328667838,
-  "train_steps": 1000
-}

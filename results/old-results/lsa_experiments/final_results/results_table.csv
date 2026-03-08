@@ -1,6 +1,0 @@
-num_layers,mse_gd_mean,mse_gd_std,mse_lsa_mean,mse_lsa_std,mse_softmax_mean,mse_softmax_std,mse_linformer_mean,mse_linformer_std,mse_kernel_mean,mse_kernel_std,cosine_sim_lsa_mean,cosine_sim_lsa_std,cosine_sim_softmax_mean,cosine_sim_softmax_std,cosine_sim_linformer_mean,cosine_sim_linformer_std,cosine_sim_kernel_mean,cosine_sim_kernel_std
-1,16.041769858329527,3.1833011109563434,nan,nan,19.272910271921464,3.780489544446237,nan,nan,nan,nan,nan,nan,0.1268843925527988,0.03067062392302424,nan,nan,nan,nan
-2,12.944275056162189,2.844399524241814,nan,nan,18.814714247180568,4.129980749631497,nan,nan,nan,nan,nan,nan,0.1676057303144086,0.035176913561215786,nan,nan,nan,nan
-4,10.311817753699518,2.4805144101083636,nan,nan,13.152674090477728,2.9358619619952173,nan,nan,nan,nan,nan,nan,0.6945943120987185,0.025404302695114005,nan,nan,nan,nan
-8,6.348433971405029,1.6070613706459131,nan,nan,19.199819257182458,4.363151475774413,nan,nan,nan,nan,nan,nan,0.32014287191052593,0.03428623760107587,nan,nan,nan,nan
-16,3.4120291048480618,0.9748380220428197,nan,nan,15.486103150152392,4.264387325382143,nan,nan,nan,nan,nan,nan,0.5066393267723822,0.02892397571168261,nan,nan,nan,nan
