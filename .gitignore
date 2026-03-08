@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+build/
+dist/
+
+# Virtual env
+.venv/
+venv/
+ENV/
+.env
+.env.*
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Experiment outputs (remove if you want these tracked)
+results/old-results/
+results/experiments_*/
+results/**/plots/
+checkpoints/
+site_bundle/
+
+# Local content not meant for version control
+papers/
+reference_repo/
