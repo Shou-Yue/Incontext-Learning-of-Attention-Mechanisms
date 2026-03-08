@@ -1,5 +1,7 @@
 # In-Context Learning of Attention Mechanisms
 
+Project website: [https://dhp003.github.io/dsc180b-website/](https://dhp003.github.io/dsc180b-website/)
+
 This repo contains a clean, runnable set of experiments for in‑context linear regression. It combines:
 - A GPT‑2–style transformer for in‑context learning (Garg et al., NeurIPS 2022).
 - Mechanistic baselines and attention variants (softmax, low‑rank/Linformer‑style, kernelized linear attention).
@@ -174,23 +176,6 @@ python scripts/plot_interactive_experiments.py \
   --context_results results/experiments_002550_20260304/exp_context_sweep/all_results.json \
   --context_zero_results results/experiments_002550_20260304/exp_context_sweep_zero/all_results.json \
   --output_dir results/experiments_002550_20260304/plots
-```
-
-## Sparse‑only reruns (optional)
-
-Run all four sweeps for sparse causal only (merges into existing folders):
-```bash
-python scripts/run_sparse_experiments.py \
-  --resume_from results/experiments_002550_20260304 \
-  --device cuda \
-  --use_amp \
-  --batch_size 256
-```
-
-Merge sparse steps only (safe, preserves other methods):
-```bash
-python scripts/merge_sparse_steps.py \
-  --exp_dir results/experiments_002550_20260304
 ```
 
 ## Pull results from DSMLP
