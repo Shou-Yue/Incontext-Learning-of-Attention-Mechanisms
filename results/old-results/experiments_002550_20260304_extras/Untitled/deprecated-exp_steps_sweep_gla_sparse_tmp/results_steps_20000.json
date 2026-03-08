@@ -1,0 +1,13 @@
+{
+  "mse_gd_mean": 5.735705423355102,
+  "mse_gd_std": 0.7145993323120947,
+  "mse_gla_mean": 6.203133583068848,
+  "mse_gla_std": 1.0268579999209706,
+  "cosine_sim_gla_mean": 0.8986914336681366,
+  "cosine_sim_gla_std": 0.005295691044236294,
+  "mse_sparse_mean": 18.667909240722658,
+  "mse_sparse_std": 3.0924130333544317,
+  "cosine_sim_sparse_mean": 0.00839929502690211,
+  "cosine_sim_sparse_std": 0.017264764850966147,
+  "train_steps": 20000
+}

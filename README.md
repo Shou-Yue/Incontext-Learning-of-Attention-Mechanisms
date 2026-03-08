@@ -21,11 +21,29 @@ The core task is synthetic linear regression: sample weights `w ~ N(0, I)`, inpu
 │   │   └── train.py       # Training loop for GPT‑2 ICL model
 │   └── evaluation/        # Baselines and GD comparisons
 ├── configs/               # Training configs (JSON)
-├── scripts/               # Training, evaluation, plots, sweeps
+├── scripts/               # Active training, sweeps, plots, utilities
+│   └── legacy/            # Older/unused scripts kept for reference
 ├── checkpoints/           # Saved model checkpoints
 ├── results/               # Plots and evaluation outputs
 └── reference_repo/        # Original reference materials
 ```
+
+## Results Layout (refactored)
+
+We keep the **current run** directly under `results/` and archive everything else:
+
+```
+results/
+├── experiments_002550_20260304/   # current run
+│   ├── exp_steps_sweep/
+│   ├── exp_layers_sweep/
+│   ├── exp_context_sweep/
+│   ├── exp_context_sweep_zero/
+│   └── plots/
+└── old-results/                   # archived runs + older artifacts
+```
+
+If you pull results from DSMLP, use `pull-and-plot.sh` to sync and regenerate plots locally.
 
 ## Setup
 
@@ -47,15 +65,15 @@ python src/training/train.py --config configs/train_linear_20d.json
 
 Convenience wrapper:
 ```bash
-./scripts/run_train.sh test_local
-./scripts/run_train.sh full
+./scripts/legacy/run_train.sh test_local
+./scripts/legacy/run_train.sh full
 ```
 
 ## Evaluation (Transformer vs Baselines)
 
 Reproduce the paper-style comparison across context lengths:
 ```bash
-python scripts/evaluate_all_methods.py \
+python scripts/legacy/evaluate_all_methods.py \
   --checkpoint checkpoints/linear_20d_full/checkpoint_latest.pt \
   --n_dims 20 \
   --output results/
@@ -63,16 +81,16 @@ python scripts/evaluate_all_methods.py \
 
 Additional evaluations:
 ```bash
-python scripts/evaluate_overparameterized.py
-python scripts/compare_overparameterized.py
-python scripts/evaluate_7d_15p.py
+python scripts/legacy/evaluate_overparameterized.py
+python scripts/legacy/compare_overparameterized.py
+python scripts/legacy/evaluate_7d_15p.py
 ```
 
 ## Attention Variant Experiments
 
 Softmax vs low‑rank (Linformer‑style) vs GD sweep:
 ```bash
-python scripts/lowrank_softmax_sweep.py \
+python scripts/legacy/lowrank_softmax_sweep.py \
   --d 20 \
   --num_layers_list 1 2 4 8 \
   --num_train_tasks 10000 \
@@ -82,7 +100,7 @@ python scripts/lowrank_softmax_sweep.py \
 
 Sanity check for low‑rank equivalence at full rank:
 ```bash
-python scripts/verify_lowrank_equivalence.py
+python scripts/legacy/verify_lowrank_equivalence.py
 ```
 
 ## Core Experiment Suite (4 Sweeps)
@@ -92,13 +110,12 @@ These are the main experiments we use to compare attention mechanisms. Each swee
 - Two plots (MSE + cosine)
 
 ### One‑command runner (recommended)
-This creates a timestamped directory for every run:
+Creates a timestamped directory for every run:
 `results/experiments_<HHMMSS_YYYYMMDD>/`
 ```bash
 python scripts/run_all_experiments.py --device cuda
 ```
-Each run writes its plots to:
-`results/experiments_<HHMMSS_YYYYMMDD>/plots/`
+Plots go to `results/experiments_<...>/plots/`.
 
 ### Individual sweeps (manual)
 You can still run the sweeps one‑by‑one. If you do, set `--output_dir` manually.
@@ -111,18 +128,21 @@ python scripts/exp_steps_sweep.py \
   --n_points 41 \
   --num_layers 8 \
   --train_steps_list 0 1000 2000 5000 10000 20000 \
-  --output_dir results/exp_all/exp_steps_sweep
+  --output_dir results/experiments_002550_20260304/exp_steps_sweep
 ```
 
 ### 2) Layer Sweep (layers ≈ GD steps)
 Vary number of layers while holding training steps and context length fixed.
+Uses a per‑layer step schedule (5k for 2/4/8, 10k for 16):
 ```bash
-python scripts/lsa_gd_multilayer.py \
+python scripts/exp_layers_sweep_stepsched.py \
   --d 20 \
-  --num_layers_list 2 4 8 16 32 64 \
-  --num_train_tasks 10000 \
-  --num_epochs 10 \
-  --output_dir results/exp_all/exp_layers_sweep
+  --n_points 41 \
+  --num_layers_list 2 4 8 16 \
+  --steps_shallow 5000 \
+  --steps_deep 10000 \
+  --deep_layer_threshold 16 \
+  --output_dir results/experiments_002550_20260304/exp_layers_sweep
 ```
 
 ### 3) In‑Context Sweep (scaling with n)
@@ -130,47 +150,54 @@ Vary number of in‑context examples while holding layers and training steps fix
 ```bash
 python scripts/exp_context_sweep.py \
   --d 20 \
-  --n_points_list 5 10 20 40 \
+  --n_points_list 5 10 20 40 80 120 160 200 \
   --num_layers 8 \
-  --train_steps 10000 \
-  --output_dir results/exp_all/exp_context_sweep
+  --train_steps 5000 \
+  --output_dir results/experiments_002550_20260304/exp_context_sweep
 ```
 
 ### 4) Zero‑Training Context Sweep (random init baseline)
 Context sweep with **0 training** to show random‑init behavior.
 ```bash
-python scripts/exp_context_sweep_zero_train.py \
+python scripts/exp_context_sweep_zero_train_long.py \
   --d 20 \
-  --n_points_list 5 10 20 40 80 \
+  --n_points_list 5 10 20 40 80 120 160 200 \
   --num_layers 8 \
-  --output_dir results/exp_all/exp_context_sweep_zero
+  --output_dir results/experiments_002550_20260304/exp_context_sweep_zero
 ```
 
-### Plotting all 8 graphs
-Plots are saved to the `plots/` folder you specify.
+### Interactive plots (recommended)
 ```bash
-python scripts/plot_all_experiments.py \
-  --steps_results results/exp_all/exp_steps_sweep/all_results.json \
-  --layers_results results/exp_all/exp_layers_sweep/all_results.json \
-  --context_results results/exp_all/exp_context_sweep/all_results.json \
-  --context_zero_results results/exp_all/exp_context_sweep_zero/all_results.json \
-  --output_dir results/exp_all/plots
+python scripts/plot_interactive_experiments.py \
+  --steps_results results/experiments_002550_20260304/exp_steps_sweep/all_results.json \
+  --layers_results results/experiments_002550_20260304/exp_layers_sweep/all_results.json \
+  --context_results results/experiments_002550_20260304/exp_context_sweep/all_results.json \
+  --context_zero_results results/experiments_002550_20260304/exp_context_sweep_zero/all_results.json \
+  --output_dir results/experiments_002550_20260304/plots
 ```
 
-### Interactive plots
-Single‑experiment interactive plot with toggles:
+## Sparse‑only reruns (optional)
+
+Run all four sweeps for sparse causal only (merges into existing folders):
 ```bash
-python scripts/plot_interactive_experiment.py \
-  --results_file results/exp_all/exp_steps_sweep/all_results.json \
-  --metric mse
+python scripts/run_sparse_experiments.py \
+  --resume_from results/experiments_002550_20260304 \
+  --device cuda \
+  --use_amp \
+  --batch_size 256
 ```
 
-All‑experiments interactive plot (6 subplots for steps/layers/context):
+Merge sparse steps only (safe, preserves other methods):
 ```bash
-python scripts/plot_interactive_all_experiments.py \
-  --steps_results results/exp_all/exp_steps_sweep/all_results.json \
-  --layers_results results/exp_all/exp_layers_sweep/all_results.json \
-  --context_results results/exp_all/exp_context_sweep/all_results.json
+python scripts/merge_sparse_steps.py \
+  --exp_dir results/experiments_002550_20260304
+```
+
+## Pull results from DSMLP
+
+Pull latest results and regenerate plots locally:
+```bash
+./pull-and-plot.sh latest auto --fresh
 ```
 
 ## LSA (Linear Self‑Attention) Experiments
@@ -184,21 +211,18 @@ python scripts/lsa_gd_multilayer.py \
   --device cuda
 ```
 
-Plot LSA results:
-```bash
-python scripts/plot_lsa_multilayer.py
-```
+Legacy plotting utilities live under `scripts/legacy/`.
 
 ## Visualization
 
 Training progress:
 ```bash
-python scripts/plot_training.py checkpoints/linear_20d_full/training_log.jsonl
+python scripts/legacy/plot_training.py checkpoints/linear_20d_full/training_log.jsonl
 ```
 
 Interactive comparison plot:
 ```bash
-python scripts/interactive_plot.py results/all_methods_results.json
+python scripts/legacy/interactive_plot.py results/all_methods_results.json
 ```
 
 ## Outputs
@@ -206,7 +230,7 @@ python scripts/interactive_plot.py results/all_methods_results.json
 Typical outputs are written under `results/` and `checkpoints/`:
 - Evaluation JSON files and plots from scripts.
 - Checkpoints and training logs from `src/training/train.py`.
-- Core suite results in `results/exp_all/` (four sweeps + plots) or in
+- Core suite results in `results/experiments_002550_20260304/` (four sweeps + plots) or in
   `results/experiments_<HHMMSS_YYYYMMDD>/` when using `scripts/run_all_experiments.py`.
 
 ## Reproducibility

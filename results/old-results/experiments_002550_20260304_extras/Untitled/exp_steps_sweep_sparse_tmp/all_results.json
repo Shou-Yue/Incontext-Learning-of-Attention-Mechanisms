@@ -1,0 +1,56 @@
+[
+  {
+    "mse_gd_mean": 6.146779108047485,
+    "mse_gd_std": 1.106192916734119,
+    "mse_sparse_mean": 19.638585472106932,
+    "mse_sparse_std": 2.180781607825201,
+    "cosine_sim_sparse_mean": 0.00657459938665852,
+    "cosine_sim_sparse_std": 0.02250689988716893,
+    "train_steps": 0
+  },
+  {
+    "mse_gd_mean": 6.022764348983765,
+    "mse_gd_std": 0.8842240834370627,
+    "mse_sparse_mean": 20.356161022186278,
+    "mse_sparse_std": 3.383767573328906,
+    "cosine_sim_sparse_mean": -0.016637519958021586,
+    "cosine_sim_sparse_std": 0.018627163328667838,
+    "train_steps": 1000
+  },
+  {
+    "mse_gd_mean": 5.996669006347656,
+    "mse_gd_std": 0.5060957430762475,
+    "mse_sparse_mean": 19.07327175140381,
+    "mse_sparse_std": 2.1626394367776345,
+    "cosine_sim_sparse_mean": -0.004885190678760409,
+    "cosine_sim_sparse_std": 0.018838880184230737,
+    "train_steps": 2000
+  },
+  {
+    "mse_gd_mean": 6.495802879333496,
+    "mse_gd_std": 0.8669573006808429,
+    "mse_sparse_mean": 19.637147903442383,
+    "mse_sparse_std": 2.3690648636929343,
+    "cosine_sim_sparse_mean": 0.00615713486331515,
+    "cosine_sim_sparse_std": 0.02092588038835994,
+    "train_steps": 5000
+  },
+  {
+    "mse_gd_mean": 6.066204452514649,
+    "mse_gd_std": 0.7729797064696425,
+    "mse_sparse_mean": 19.962580490112305,
+    "mse_sparse_std": 2.9386204116532406,
+    "cosine_sim_sparse_mean": 0.010803894652053714,
+    "cosine_sim_sparse_std": 0.018485714224300544,
+    "train_steps": 10000
+  },
+  {
+    "mse_gd_mean": 6.054783678054809,
+    "mse_gd_std": 0.9529916894938099,
+    "mse_sparse_mean": 20.71579761505127,
+    "mse_sparse_std": 3.0063368313277588,
+    "cosine_sim_sparse_mean": -0.008172861370258033,
+    "cosine_sim_sparse_std": 0.02751630557806334,
+    "train_steps": 20000
+  }
+]

@@ -222,6 +222,31 @@ def train_models_fixed_steps(models, steps, d, n_points, batch_size, lr, sigma, 
     pbar.close()
 
 
+def _load_all_results(path: Path):
+    if not path.exists():
+        return []
+    return json.loads(path.read_text())
+
+
+def _update_all_results(path: Path, n_points: int, results: dict):
+    data = _load_all_results(path)
+    by_n = {r["n_points"]: r for r in data if "n_points" in r}
+    if n_points in by_n:
+        by_n[n_points].update(results)
+    else:
+        by_n[n_points] = dict(results)
+    out = [by_n[k] for k in sorted(by_n.keys())]
+    path.write_text(json.dumps(out, indent=2))
+
+
+def _merge_into(target_dir: Path, n_points: int, results: dict, results_path: Path):
+    target_dir.mkdir(parents=True, exist_ok=True)
+    _update_all_results(target_dir / "all_results.json", n_points, results)
+    target_results_n = target_dir / results_path.name
+    if not target_results_n.exists():
+        target_results_n.write_bytes(results_path.read_bytes())
+
+
 def main():
     parser = argparse.ArgumentParser(description="In-context examples sweep for attention mechanisms")
     parser.add_argument('--d', type=int, default=20)
@@ -243,6 +268,10 @@ def main():
                         help='Use mixed precision (AMP) on CUDA')
     parser.add_argument('--compile', action='store_true',
                         help='Use torch.compile on models (PyTorch 2.x)')
+    parser.add_argument('--no_resume', action='store_true',
+                        help='Disable resume logic and retrain all n_points.')
+    parser.add_argument('--merge_into', type=str, default=None,
+                        help='Optional main output dir to merge results after each n_points.')
 
     parser.add_argument('--model_types', type=str, nargs='+',
                         default=['lsa', 'softmax', 'linformer', 'kernel', 'gla', 'gqa', 'sparse'])
@@ -292,12 +321,44 @@ def main():
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    results_path = output_dir / "all_results.json"
 
-    all_results = []
+    resume = not args.no_resume
+    existing = {}
+    if resume and results_path.exists():
+        for r in _load_all_results(results_path):
+            if "n_points" in r:
+                existing[r["n_points"]] = r
+
+    merge_dir = Path(args.merge_into) if args.merge_into else None
+
     for n_points in args.n_points_list:
         print(f"\n{'='*60}")
         print(f"Experiment: n_points = {n_points}")
         print(f"{'='*60}")
+
+        results_n_path = output_dir / f"results_n_{n_points}.json"
+
+        if resume:
+            if results_n_path.exists():
+                try:
+                    cached = json.loads(results_n_path.read_text())
+                    if "n_points" not in cached:
+                        cached["n_points"] = n_points
+                    existing[n_points] = cached
+                    _update_all_results(results_path, n_points, cached)
+                    if merge_dir is not None:
+                        _merge_into(merge_dir, n_points, cached, results_n_path)
+                    print(f"[resume] Skipping n_points={n_points} (results already exist)")
+                    continue
+                except Exception:
+                    pass
+            if n_points in existing:
+                _update_all_results(results_path, n_points, existing[n_points])
+                if merge_dir is not None:
+                    _merge_into(merge_dir, n_points, existing[n_points], results_n_path)
+                print(f"[resume] Skipping n_points={n_points} (cached in all_results.json)")
+                continue
 
         models = build_models(args, n_points, args.num_layers, device)
         if args.compile:
@@ -331,14 +392,10 @@ def main():
         )
 
         results['n_points'] = n_points
-        all_results.append(results)
-
-        with open(output_dir / f"results_n_{n_points}.json", 'w') as f:
-            json.dump(results, f, indent=2)
-
-    all_results = sorted(all_results, key=lambda r: r.get('n_points', 0))
-    with open(output_dir / "all_results.json", 'w') as f:
-        json.dump(all_results, f, indent=2)
+        results_n_path.write_text(json.dumps(results, indent=2))
+        _update_all_results(results_path, n_points, results)
+        if merge_dir is not None:
+            _merge_into(merge_dir, n_points, results, results_n_path)
 
     print(f"\nSaved results to: {output_dir}")
 

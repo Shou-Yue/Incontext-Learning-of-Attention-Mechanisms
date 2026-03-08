@@ -88,6 +88,61 @@ class SparseCausalSelfAttention(nn.Module):
         return y
 
 
+class SparseSelfAttentionBlock(nn.Module):
+    """
+    Sparse causal attention block over token_dim = d+1 (same layout as other ICL models).
+    """
+    def __init__(
+        self,
+        d: int,
+        hidden_dim: int | None = None,
+        window_size: int = 128,
+        stride: Optional[int] = None,
+        global_tokens: int = 0,
+    ):
+        super().__init__()
+        self.token_dim = d + 1
+        self.hidden_dim = hidden_dim if hidden_dim is not None else d
+        self.window_size = window_size
+        self.stride = stride
+        self.global_tokens = global_tokens
+
+        self.W_q = nn.Linear(self.token_dim, self.hidden_dim, bias=False)
+        self.W_k = nn.Linear(self.token_dim, self.hidden_dim, bias=False)
+        self.W_v = nn.Linear(self.token_dim, self.token_dim, bias=False)
+        self.W_o = nn.Linear(self.token_dim, self.token_dim, bias=False)
+
+        self.norm1 = nn.LayerNorm(self.token_dim)
+        self.norm2 = nn.LayerNorm(self.token_dim)
+
+        for m in [self.W_q, self.W_k, self.W_v, self.W_o]:
+            nn.init.xavier_uniform_(m.weight, gain=0.01)
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        # tokens: [B, N, d+1]
+        tokens_norm = self.norm1(tokens)
+        Q = self.W_q(tokens_norm)
+        K = self.W_k(tokens_norm)
+        V = self.W_v(tokens_norm)
+
+        scores = torch.bmm(Q, K.transpose(1, 2)) / math.sqrt(self.hidden_dim)
+        allowed = build_sparse_causal_mask(
+            seq_len=scores.size(-1),
+            window_size=self.window_size,
+            stride=self.stride,
+            global_tokens=self.global_tokens,
+            device=tokens.device,
+        )
+        scores = scores.masked_fill(~allowed, float("-inf"))
+        weights = torch.softmax(scores, dim=-1)
+        attn_out = torch.bmm(weights, V)
+
+        out = self.W_o(attn_out) * 0.1
+        out = tokens + out
+        out = self.norm2(out)
+        return out
+
+
 class MLP(nn.Module):
     def __init__(self, n_embd: int, mlp_ratio: int = 4, resid_pdrop: float = 0.0):
         super().__init__()
@@ -202,6 +257,10 @@ class SparseTransformerModel(nn.Module):
         self.n_dims = n_dims
 
         self.read_in = nn.Linear(n_dims, n_embd)
+        # Positional + type embeddings are critical for interleaved x/y tokens.
+        # Without them, the model cannot distinguish x vs y positions.
+        self.pos_emb = nn.Embedding(n_positions, n_embd)
+        self.type_emb = nn.Embedding(2, n_embd)
         self.backbone = SparseGPTBackbone(
             n_layer=n_layer,
             n_embd=n_embd,
@@ -233,9 +292,18 @@ class SparseTransformerModel(nn.Module):
     def forward(self, xs: torch.Tensor, ys: torch.Tensor) -> torch.Tensor:
         zs = self._combine(xs, ys)
         embeds = self.read_in(zs)
+        # Add positional + type embeddings (even= x token, odd= y token)
+        t = embeds.size(1)
+        pos_ids = torch.arange(t, device=embeds.device)
+        if t > self.pos_emb.num_embeddings:
+            pos_ids = pos_ids % self.pos_emb.num_embeddings
+        type_ids = (pos_ids % 2).long()
+        embeds = embeds + self.pos_emb(pos_ids).unsqueeze(0)
+        embeds = embeds + self.type_emb(type_ids).unsqueeze(0)
         h = self.backbone(embeds)
         prediction = self.read_out(h)
-        prediction = prediction[:, ::2, 0]
+        # Predict at y positions (odd indices) where model has seen the x token
+        prediction = prediction[:, 1::2, 0]
         return prediction
 
 
@@ -259,26 +327,36 @@ class SparseICLModel(nn.Module):
         self.d = d
         self.n_points = n_points
         self.num_layers = num_layers
-        n_embd = hidden_dim if hidden_dim is not None else d
-        n_positions = (2 * n_points + 2) if n_points is not None else (2 * d + 1)
-        self.backbone = SparseTransformerModel(
-            n_dims=d,
-            n_positions=n_positions,
-            n_embd=n_embd,
-            n_layer=num_layers,
-            n_head=n_head,
-            window_size=window_size,
-            stride=stride,
-            global_tokens=global_tokens,
-        )
+        self.hidden_dim = hidden_dim if hidden_dim is not None else d
+
+        # Use the same tokenization as other ICL models (x,y concatenated).
+        self.layers = nn.ModuleList([
+            SparseSelfAttentionBlock(
+                d=d,
+                hidden_dim=self.hidden_dim,
+                window_size=window_size,
+                stride=stride,
+                global_tokens=global_tokens,
+            )
+            for _ in range(num_layers)
+        ])
+
+        self.pred_head = nn.Linear(d + 1, 1, bias=False)
+        nn.init.xavier_uniform_(self.pred_head.weight, gain=0.1)
 
     def forward(self, xs, ys, query_x):
         b, n, d = xs.shape
+        train_tokens = torch.cat([xs, ys.unsqueeze(-1)], dim=-1)  # [B, n, d+1]
         query_y = torch.zeros(b, 1, device=xs.device, dtype=xs.dtype)
-        xs_all = torch.cat([xs, query_x], dim=1)
-        ys_all = torch.cat([ys, query_y], dim=1)
-        preds = self.backbone(xs_all, ys_all)  # [B, n+1]
-        return preds[:, -1]
+        query_token = torch.cat([query_x, query_y.unsqueeze(-1)], dim=-1)  # [B, 1, d+1]
+        tokens = torch.cat([train_tokens, query_token], dim=1)  # [B, n+1, d+1]
+
+        for layer in self.layers:
+            tokens = layer(tokens)
+
+        query_out = tokens[:, -1, :]  # [B, d+1]
+        y_pred = self.pred_head(query_out)
+        return y_pred.squeeze(-1)
 
     def get_weight_update(self, xs, ys, query_x):
         batch_size, n_points, d = xs.shape

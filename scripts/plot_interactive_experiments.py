@@ -113,7 +113,7 @@ def _extract_series_for_method_cos(results, method_key, lowrank_mode):
     return np.array(vals, dtype=float), np.array(stds, dtype=float)
 
 
-def _build_fig(results, x_key, x_label, title_prefix, color_map, lowrank_mode):
+def _build_fig(results, x_key, x_label, title_prefix, color_map, lowrank_mode, x_range=None):
     results = sorted(results, key=lambda r: r.get(x_key, 0))
     x = np.array([r.get(x_key, 0) for r in results])
     methods = _collect_methods(results, lowrank_mode=lowrank_mode)
@@ -197,13 +197,17 @@ def _build_fig(results, x_key, x_label, title_prefix, color_map, lowrank_mode):
 
     fig.update_xaxes(title_text=x_label, row=1, col=1)
     fig.update_xaxes(title_text=x_label, row=1, col=2)
+    if x_range is not None:
+        fig.update_xaxes(range=list(x_range), row=1, col=1)
+        fig.update_xaxes(range=list(x_range), row=1, col=2)
     fig.update_yaxes(title_text="Mean Squared Error", row=1, col=1)
     fig.update_yaxes(title_text="Cosine Similarity", row=1, col=2)
     fig.update_layout(
-        height=520,
+        height=620,
         margin=dict(l=40, r=40, t=60, b=40),
         showlegend=True,
         legend=dict(orientation="h", y=-0.2, x=0, xanchor="left"),
+        autosize=True,
     )
 
     return fig, trace_indices, label_map
@@ -258,6 +262,19 @@ def main():
     context_results = _load_if_exists(args.context_results)
     context_zero_results = _load_if_exists(args.context_zero_results)
 
+    # Extend context sweep x-axis to the max seen across trained + zero-train
+    context_x_range = None
+    context_max = None
+    for res in (context_results, context_zero_results):
+        if res:
+            xs = [r.get("n_points", 0) for r in res if "n_points" in r]
+            if xs:
+                mx = max(xs)
+                context_max = mx if context_max is None else max(context_max, mx)
+    if context_max is not None and context_results:
+        min_x = min(r.get("n_points", context_max) for r in context_results if "n_points" in r)
+        context_x_range = (min_x, context_max)
+
     all_methods = set()
     for res in (steps_results, layers_results, context_results, context_zero_results):
         if res is not None:
@@ -272,9 +289,9 @@ def main():
     if layers_results is not None:
         tabs.append(("Layers Sweep", *_build_fig(layers_results, "num_layers", "Number of Layers / GD Steps", "Layers Sweep", color_map, args.lowrank_mode)))
     if context_results is not None:
-        tabs.append(("Context Sweep", *_build_fig(context_results, "n_points", "In-context Examples (n)", "Context Sweep", color_map, args.lowrank_mode)))
+        tabs.append(("Context Sweep", *_build_fig(context_results, "n_points", "In-context Examples (n)", "Context Sweep", color_map, args.lowrank_mode, x_range=context_x_range)))
     if context_zero_results is not None:
-        tabs.append(("Context Sweep (Zero Train)", *_build_fig(context_zero_results, "n_points", "In-context Examples (n)", "Context Sweep (Zero Train)", color_map, args.lowrank_mode)))
+        tabs.append(("Context Sweep (Zero Train)", *_build_fig(context_zero_results, "n_points", "In-context Examples (n)", "Context Sweep (Zero Train)", color_map, args.lowrank_mode, x_range=context_x_range)))
 
     if not tabs:
         raise SystemExit("No valid results files found; nothing to plot.")
@@ -333,7 +350,7 @@ def main():
                   </div>
                 </div>
                 <div class="plot-area">
-                  <div id="{fig_id}"></div>
+                  <div id="{fig_id}" class="plot"></div>
                 </div>
               </div>
             </div>
@@ -351,18 +368,19 @@ def main():
   <title>Interactive Experiment Plots</title>
   <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
   <style>
-    body {{ font-family: Arial, sans-serif; margin: 16px; }}
+    body {{ font-family: Arial, sans-serif; margin: 12px; }}
     .tab-btn {{ padding: 8px 12px; margin-right: 6px; border: 1px solid #ccc; background: #f5f5f5; cursor: pointer; }}
     .tab-btn.active {{ background: #e0e0e0; }}
-    .tab-content {{ margin-top: 12px; }}
-    .tab-grid {{ display: grid; grid-template-columns: 220px 1fr; gap: 16px; align-items: start; }}
-    .sidebar {{ border: 1px solid #ddd; padding: 10px; border-radius: 6px; background: #fafafa; }}
+    .tab-content {{ margin-top: 12px; width: 100%; }}
+    .tab-grid {{ display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 16px; align-items: start; width: 100%; }}
+    .sidebar {{ border: 1px solid #ddd; padding: 10px; border-radius: 6px; background: #fafafa; height: fit-content; }}
     .sidebar-title {{ font-weight: 600; margin-bottom: 8px; }}
     .chk {{ display: block; margin-bottom: 6px; font-size: 14px; }}
     .swatch {{ display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin: 0 8px 0 6px; border: 1px solid #333; }}
     .toggle-all {{ margin-top: 10px; display: flex; gap: 8px; }}
     .toggle-all button {{ padding: 4px 8px; border: 1px solid #bbb; background: #f3f3f3; cursor: pointer; border-radius: 4px; }}
-    .plot-area {{ min-width: 400px; }}
+    .plot-area {{ min-width: 400px; width: 100%; }}
+    .plot {{ width: 100%; height: 70vh; }}
   </style>
   <script>
     let FIGS = {{}};
@@ -372,6 +390,14 @@ def main():
       const idxs = TRACE_MAP[figId][methodLabel] || [];
       const vis = isChecked ? true : "legendonly";
       Plotly.restyle(figId, {{visible: vis}}, idxs);
+    }}
+
+    function resizePlot(el) {{
+      if (!el) return;
+      const h = Math.max(520, Math.floor(window.innerHeight * 0.72));
+      el.style.height = h + "px";
+      Plotly.relayout(el, {{height: h, autosize: true}});
+      Plotly.Plots.resize(el);
     }}
 
     function openTab(evt, tabId) {{
@@ -384,8 +410,17 @@ def main():
       for (i = 0; i < tabbuttons.length; i++) {{
         tabbuttons[i].className = tabbuttons[i].className.replace(" active", "");
       }}
-      document.getElementById(tabId).style.display = "block";
+      const tabEl = document.getElementById(tabId);
+      tabEl.style.display = "block";
       evt.currentTarget.className += " active";
+      // Ensure Plotly resizes when switching tabs
+      const plot = tabEl.querySelector(".plot");
+      if (plot) {{
+        // Hidden tabs often measure 0px width; retry a few times after display
+        requestAnimationFrame(() => resizePlot(plot));
+        setTimeout(() => resizePlot(plot), 120);
+        setTimeout(() => resizePlot(plot), 400);
+      }}
     }}
     function toggleAll(figId, checked) {{
       const map = TRACE_MAP[figId] || {{}};
@@ -399,8 +434,28 @@ def main():
       var first = document.getElementsByClassName("tab-btn")[0];
       if (first) {{ first.className += " active"; }}
       for (const [figId, payload] of Object.entries(FIGS)) {{
-        Plotly.newPlot(figId, payload.data, payload.layout, {{responsive: true}});
+        Plotly.newPlot(figId, payload.data, payload.layout, {{responsive: true}}).then(() => {{
+          const el = document.getElementById(figId);
+          resizePlot(el);
+        }});
       }}
+      // Trigger a resize for all tabs after initial render (hidden tabs need a nudge)
+      setTimeout(() => {{
+        for (const figId of Object.keys(FIGS)) {{
+          const el = document.getElementById(figId);
+          if (!el) continue;
+          const h = Math.max(520, Math.floor(window.innerHeight * 0.72));
+          el.style.height = h + "px";
+          Plotly.relayout(figId, {{height: h}});
+          Plotly.Plots.resize(figId);
+        }}
+      }}, 200);
+      window.addEventListener("resize", () => {{
+        for (const figId of Object.keys(FIGS)) {{
+          const el = document.getElementById(figId);
+          resizePlot(el);
+        }}
+      }});
     }};
   </script>
 </head>
