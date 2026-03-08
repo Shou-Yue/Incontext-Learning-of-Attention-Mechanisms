@@ -220,6 +220,15 @@ Typical outputs are written under `results/` and `checkpoints/`:
 - Low‑rank attention uses Linformer‑style sequence projection of K/V.
 - LSA stacks correspond to multi‑step gradient descent behavior.
 
+## Team Contributions
+
+This repository was developed collaboratively using separate feature branches for each team member, which were later merged into the main branch. Evidence of individual progress and collaboration can be found under these branches. 
+
+- Anish Kasam: anish
+- Dhanvi Patel: GQA-Draft-Code
+- Krish Prasad: low-rank-kernelized-linear
+- Shou Tai Yue: GLA-Draft-Code
+
 ## References
 
 - Garg et al., “What Can Transformers Learn In‑Context? A Case Study of Simple Function Classes” (NeurIPS 2022)
