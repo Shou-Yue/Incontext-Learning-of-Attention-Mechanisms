@@ -1,0 +1,34 @@
+scp -i ~/.ssh/ask-hammerspace.pem -r ~/Desktop/Replicating-What-Can-Transformers-Learn-In-Context-Garg-et-al.-NeurIPS-2022- ec2-user@18.118.222.12:/home/ec2-user/
+
+
+ssh -i ~/.ssh/ask-hammerspace.pem ec2-user@18.118.222.12
+
+
+#delete checkpoints:
+rm checkpoints/test_local/checkpoint_latest.pt
+rm checkpoints/test_local/training_log.jsonl
+
+
+#run trianing:
+python3 src/training/train.py --config configs/test_local.json --num_steps 30000
+
+
+
+#training plot:
+python3 scripts/plot_training.py checkpoints/test_local/training_log.jsonl
+
+
+#eval_plot:
+python3 scripts/evaluate_all_methods.py \
+  --checkpoint checkpoints/test_local/checkpoint_latest.pt \
+  --config configs/test_local.json \
+  --n_eval 100 \
+  --output results/all_methods_comparison.png \
+  --max_points 40
+
+#move png local: 
+scp -i ~/.ssh/ask-hammerspace.pem ec2-user@18.118.222.12:/home/ec2-user/Replicating-What-Can-Transformers-Learn-In-Context-Garg-et-al.-NeurIPS-2022-/{training_progress.png,results/all_methods_comparison.png,results/all_methods_results.json} ~/Desktop/Replicating-What-Can-Transformers-Learn-In-Context-Garg-et-al.-NeurIPS-2022-/results/
+
+#run interactive plot
+python3 scripts/interactive_plot.py results/all_methods_results.json
+
