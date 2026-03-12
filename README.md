@@ -224,7 +224,7 @@ Typical outputs are written under `results/` and `checkpoints/`:
 
 This repository was developed collaboratively using separate feature branches for each team member, which were later merged into the main branch. Evidence of individual progress and collaboration can be found under these branches. 
 
-- Anish Kasam: anish
+- Anish Kasam: sparse
 - Dhanvi Patel: GQA-Draft-Code
 - Krish Prasad: low-rank-kernelized-linear
 - Shou Tai Yue: GLA-Draft-Code
@@ -233,4 +233,3 @@ This repository was developed collaboratively using separate feature branches fo
 
 - Garg et al., “What Can Transformers Learn In‑Context? A Case Study of Simple Function Classes” (NeurIPS 2022)
 - Oswald et al., “Transformers Learn In‑Context by Gradient Descent” (NeurIPS 2023)
-- x
